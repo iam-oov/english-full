@@ -8,21 +8,13 @@ nombre): si manana cambiamos a un motor offline, solo tocamos este archivo.
 
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
-import tempfile
 import time
-import wave
+
 import azure.cognitiveservices.speech as speechsdk
 
 from assessment import Assessment, PhonemeScore, WordScore
+from audio import pick_samplerate, save_wav
 from config import Config
-
-# Formato de audio para la captura: 16 kHz, 16-bit, mono PCM (lo que espera
-# Azure y lo que graba sounddevice como int16).
-_SAMPLE_RATE = 16000
-_SAMPLE_WIDTH = 2  # bytes (16-bit)
 
 
 class Scorer:
@@ -31,21 +23,6 @@ class Scorer:
         self._capture_error: str | None = None  # ultimo error de captura del mic
 
     # --- helpers de construccion (uno nuevo por llamada => thread-safe) ---
-
-    def _pick_samplerate(self, device) -> int:
-        """Elige una frecuencia que el mic soporte: 16k si puede (lo ideal para
-        Azure), si no la nativa del aparato. Los 'hw:' crudos de ALSA NO hacen
-        16k, por eso no se puede forzar."""
-        import sounddevice as sd
-
-        try:
-            sd.check_input_settings(
-                device=device, samplerate=_SAMPLE_RATE, channels=1, dtype="int16"
-            )
-            return _SAMPLE_RATE
-        except Exception:
-            info = sd.query_devices(device, "input")
-            return int(info["default_samplerate"])
 
     def _speech_config(self) -> speechsdk.SpeechConfig:
         return speechsdk.SpeechConfig(
@@ -149,7 +126,7 @@ class Scorer:
                     stream.close()
                     if push is not None:
                         push.close()
-                    wav_path = self._save_wav(frames, capture_rate)
+                    wav_path = save_wav(frames, capture_rate)
                 except Exception:
                     wav_path = None
 
@@ -269,7 +246,7 @@ class Scorer:
         try:
             import sounddevice as sd
 
-            samplerate = self._pick_samplerate(device)
+            samplerate = pick_samplerate(device)
             push = speechsdk.audio.PushAudioInputStream(
                 stream_format=speechsdk.audio.AudioStreamFormat(
                     samples_per_second=samplerate, bits_per_sample=16, channels=1
@@ -293,74 +270,6 @@ class Scorer:
         except Exception as exc:
             self._capture_error = str(exc)
             return None, None, None
-
-    def _save_wav(
-        self, frames: bytearray, samplerate: int = _SAMPLE_RATE,
-        name: str = "pron_tetris_last.wav",
-    ) -> str | None:
-        """Vuelca el PCM capturado a un .wav temporal (se sobreescribe cada vez)."""
-        if not frames:
-            return None
-        path = os.path.join(tempfile.gettempdir(), name)
-        with wave.open(path, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(_SAMPLE_WIDTH)
-            wf.setframerate(samplerate)
-            wf.writeframes(bytes(frames))
-        return path
-
-    def record_test(self, device=None, seconds: float = 3.0):
-        """Graba 'seconds' del mic elegido para PROBARLO. Devuelve (wav_path, error).
-
-        Independiente de Azure: solo graba y luego la UI lo reproduce. Bloquea
-        (el sleep): llamar desde un hilo aparte.
-        """
-        try:
-            import sounddevice as sd
-
-            samplerate = self._pick_samplerate(device)
-            frames = bytearray()
-
-            def _callback(indata, _fc, _ti, _st):
-                frames.extend(bytes(indata))
-
-            stream = sd.RawInputStream(
-                samplerate=samplerate, channels=1, dtype="int16",
-                device=device, callback=_callback,
-            )
-            stream.start()
-            time.sleep(seconds)
-            stream.stop()
-            stream.close()
-            path = self._save_wav(frames, samplerate, name="pron_tetris_mictest.wav")
-            if not path:
-                return None, "No se capturó audio. ¿El micrófono está mudo o sin permiso?"
-            return path, None
-        except Exception as exc:
-            return None, f"No pude grabar la prueba: {exc}"
-
-    def play_recording(self, path: str) -> str | None:
-        """Reproduce el .wav de lo que dijiste. Devuelve error o None. Bloquea."""
-        if not path or not os.path.exists(path):
-            return "Todavía no hay grabación para reproducir."
-        players = (
-            ("aplay", ["-q"]),
-            ("paplay", []),
-            ("ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet"]),
-        )
-        for player, args in players:
-            if shutil.which(player):
-                try:
-                    subprocess.run(
-                        [player, *args, path],
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    return None
-                except Exception as exc:
-                    return f"No pude reproducir tu grabación: {exc}"
-        return "No encontré reproductor de audio (instalá alsa-utils o pulseaudio-utils)."
 
     def _build_ssml(self, text: str) -> str:
         """SSML con la voz, el TONO (pitch) y la VELOCIDAD (rate) configurados.

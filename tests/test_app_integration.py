@@ -46,12 +46,6 @@ class FakeScorer:
     def speak(self, text):
         return None
 
-    def play_recording(self, path):
-        return None
-
-    def record_test(self, device=None, seconds=3.0):
-        return (None, None)
-
 
 class FakeCoach:
     """Doble del puerto PronunciationCoach (sin DeepSeek)."""
@@ -64,10 +58,20 @@ class FakeCoach:
         return None
 
 
+class FakeAudio:
+    """Doble del puerto AudioIO (sin sonido real)."""
+
+    def record_test(self, device=None, seconds=3.0):
+        return (None, None)
+
+    def play_recording(self, path):
+        return None
+
+
 @pytest.fixture
 def app():
     root = tk.Tk()
-    instance = App(root, _config(), FakeScorer(), FakeCoach())
+    instance = App(root, _config(), FakeScorer(), FakeCoach(), FakeAudio())
     instance._begin_game(["hello world"])
     yield instance
     root.destroy()

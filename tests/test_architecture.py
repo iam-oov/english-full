@@ -30,3 +30,19 @@ def test_app_module_does_not_import_azure_sdk():
         text=True,
     )
     assert result.returncode == 0, (result.stdout + result.stderr).strip()
+
+
+def test_audio_module_does_not_import_azure_sdk():
+    # El audio local (grabar/reproducir) no tiene por que arrastrar el SDK de Azure.
+    code = (
+        "import sys, audio\n"
+        "azure = sorted(m for m in sys.modules if m.startswith('azure'))\n"
+        "sys.exit('Azure cargado al importar audio: ' + ', '.join(azure) if azure else 0)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (result.stdout + result.stderr).strip()

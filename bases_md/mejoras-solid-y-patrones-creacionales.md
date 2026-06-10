@@ -350,13 +350,14 @@ deja el juego funcionando:
 | 2 | ✅ hecho | Extraer `scoring.py` (`judge`) — regla de aprobado pura | SRP | Bajo | **Alto** (testeable) |
 | 3 | ✅ hecho | Definir `Protocol`s + inyectar `Scorer`/`Coach` en `App` | DIP | Medio | Alto |
 | 4 | ✅ hecho | Mover `long_form`/`continuous`/`is_multiword` a `Target` | OCP | Bajo | Medio |
-| 5 | ⬜ pendiente | (Opcional) separar puerto `AudioIO` de `Scorer` | ISP, SRP | Medio | Bajo |
+| 5 | ✅ hecho | Separar puerto `AudioIO` de `Scorer` (módulo `audio.py`) | ISP, SRP | Medio | Bajo |
 | 6 | ⬜ pendiente | (Cuando haya 2º motor) `build_scorer` factory | Factory | Bajo | Diferido |
 
-**Estado al 2026-06-10:** pasos #1–#4 implementados con tests (19 verdes).
+**Estado al 2026-06-10:** pasos #1–#5 implementados con tests (23 verdes).
 Se agregó `assessment.py` (DTOs sin Azure), `scoring.py` (`judge`), `ports.py`
-(puertos), properties de comportamiento en `Target`, y `tests/` con pytest.
-Quedan #5 y #6.
+(puertos `PronunciationScorer` / `AudioIO`), `audio.py` (audio local sin Azure),
+properties de comportamiento en `Target`, y `tests/` con pytest. Queda solo #6
+(factory), diferido hasta que exista un 2º motor de scoring.
 
 **Empezá por #2.** Es el de mejor relación retorno/riesgo: aísla la regla más
 importante y menos verificable del juego en una función pura que podés cubrir

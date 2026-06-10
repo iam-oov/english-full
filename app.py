@@ -30,7 +30,7 @@ from enum import Enum
 
 from assessment import Assessment
 from config import Config
-from ports import PronunciationCoach, PronunciationScorer
+from ports import AudioIO, PronunciationCoach, PronunciationScorer
 from scoring import judge
 
 
@@ -213,6 +213,7 @@ class App:
         config: Config,
         scorer: PronunciationScorer,
         coach: PronunciationCoach,
+        audio: AudioIO,
     ) -> None:
         self.root = root
         self.config = config
@@ -220,6 +221,7 @@ class App:
         # App solo conoce los puertos (ports.py), nunca las clases concretas.
         self.scorer = scorer
         self.coach = coach  # DeepSeek (opcional): ranking + consejos
+        self.audio = audio  # grabar prueba de mic + reproducir WAV (local, sin Azure)
         self.results: "queue.Queue[tuple[str, object]]" = queue.Queue()
 
         self.game: Game | None = None
@@ -839,7 +841,7 @@ class App:
         self.hint.config(text="🔊 Reproduciendo TU voz…")
 
         def work() -> None:
-            err = self.scorer.play_recording(path)
+            err = self.audio.play_recording(path)
             self.results.put(("tts", err))  # mismo handler que el TTS
 
         threading.Thread(target=work, daemon=True).start()
@@ -856,12 +858,12 @@ class App:
         self.feedback.config(text="🎙 Grabando 3 segundos… ¡decí algo!", fg=ACCENT)
 
         def work() -> None:
-            path, err = self.scorer.record_test(device, seconds=3.0)
+            path, err = self.audio.record_test(device, seconds=3.0)
             if err:
                 self.results.put(("mictest", (None, err)))
                 return
             self.results.put(("mictest_status", "playing"))
-            play_err = self.scorer.play_recording(path)
+            play_err = self.audio.play_recording(path)
             self.results.put(("mictest", (path, play_err)))
 
         threading.Thread(target=work, daemon=True).start()
@@ -1225,11 +1227,12 @@ def main() -> None:
     # Composition root: el UNICO lugar que conoce los adaptadores concretos. Se
     # importan localmente a proposito -> asi importar `app` (p. ej. desde un
     # test) no arrastra el SDK de Azure ni HTTP, y App queda testeable con dobles.
+    from audio import LocalAudio
     from coach import Coach
     from scorer import Scorer
 
     root = tk.Tk()
-    App(root, config, Scorer(config), Coach(config))
+    App(root, config, Scorer(config), Coach(config), LocalAudio())
     root.mainloop()
 
 

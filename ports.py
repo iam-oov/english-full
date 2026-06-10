@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 class PronunciationScorer(Protocol):
-    """Captura del microfono + scoring de pronunciacion + audio (TTS / playback)."""
+    """Captura del microfono + scoring de pronunciacion + TTS. Habla con Azure."""
 
     def assess(
         self,
@@ -31,11 +31,19 @@ class PronunciationScorer(Protocol):
 
     def speak(self, text: str) -> str | None: ...
 
-    def play_recording(self, path: str) -> str | None: ...
+
+class AudioIO(Protocol):
+    """Audio local (sin Azure): grabar una prueba de mic y reproducir un WAV.
+
+    Separado de PronunciationScorer (ISP): quien solo reproduce un .wav no
+    deberia depender de la superficie de Azure.
+    """
 
     def record_test(
         self, device=None, seconds: float = 3.0
     ) -> tuple[str | None, str | None]: ...
+
+    def play_recording(self, path: str) -> str | None: ...
 
 
 class PronunciationCoach(Protocol):

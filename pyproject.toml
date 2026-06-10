@@ -1,0 +1,29 @@
+[project]
+name = "pronunciation-tetris"
+version = "0.1.0"
+description = "Juego de pronunciacion estilo Tetris con Azure Pronunciation Assessment"
+readme = "README.md"
+# El Python del sistema linkea libX11 dinamico (3.12). NO 3.13: ese seria el
+# "standalone" que uv baja, con libX11 estatica que rompe XInitThreads (crash de
+# XCB con tkinter + threads). Ver [tool.uv] mas abajo.
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # Motor de scoring: captura de mic, reconocimiento, pronunciation
+    # assessment y TTS, todo en este unico paquete.
+    "azure-cognitiveservices-speech>=1.40.0",
+    "requests>=2.34.2",
+    "sounddevice>=0.5.5",
+]
+
+[tool.uv]
+# CLAVE: usar SOLO el Python del sistema, nunca el standalone que uv descarga.
+# El standalone linkea libX11 estaticamente (simbolo no exportado), asi que
+# ctypes XInitThreads() le habla a otra libX11 y no surte efecto -> crash de XCB
+# "[xcb] Unknown sequence number ... Aborting" al usar tkinter con threads.
+# El Python del sistema linkea libX11 dinamico, la misma que carga ctypes.
+python-preference = "only-system"
+
+# Sin [build-system] a proposito: esto es una APLICACION, no una libreria
+# instalable. uv lo trata como proyecto "virtual" e instala solo las
+# dependencias en el .venv, sin intentar empaquetar el codigo. Se corre con
+# `uv run app.py`.

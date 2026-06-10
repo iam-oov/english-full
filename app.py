@@ -65,14 +65,27 @@ def _init_x11_threads() -> None:
         except OSError:
             continue
 
-# Paleta minima.
-BG = "#0f1419"
-FG = "#e6e6e6"
-DIM = "#5c6773"
-GREEN = "#7fd962"
-RED = "#ff6b6b"
-YELLOW = "#ffd866"
-ACCENT = "#73d0ff"
+# Paleta HashiCorp marketing (dark · monocroma + un acento azul).
+BG         = "#000000"   # canvas: negro puro (token canvas/primary)
+SURFACE1   = "#15181e"   # card lift (surface-1): target, entry, coach
+SURFACE2   = "#1f232b"   # secondary control (surface-2): mic, boton, hint
+HAIRLINE   = "#3b3d45"   # borde gris 1px (aprox. del hairline translucido)
+FG         = "#ffffff"   # ink: titulos / texto enfatizado
+INK_MUTED  = "#b2b6bd"   # ink-muted: body / instrucciones / ecos
+DIM        = "#656a76"   # ink-subtle: eyebrows, labels, hints (solo sobre BG)
+INK_SUBTLE = DIM         # alias del mismo token
+ACCENT     = "#2b89ff"   # accent-blue: titulo, foco del entry, estado activo
+GREEN      = "#00ca8e"   # semantic-success (Nomad): pass / derrotado
+RED        = "#e62b1e"   # semantic-error  (Consul): fail
+YELLOW     = "#ffcf25"   # semantic-warning (Vault): near-miss / procesando
+UI         = "TkDefaultFont"  # fuente del sistema (compacta; sin zoom)
+MONO       = "TkFixedFont"    # disponible pero SIN USO (HashiCorp: no mono)
+
+
+def _bordered(w, thick=1):
+    """Aplica el hairline gris 1px (aprox. del hairline translucido HashiCorp)."""
+    w.config(highlightthickness=thick, highlightbackground=HAIRLINE, relief="flat")
+    return w
 
 # ÚNICA fuente de verdad de las teclas de audio. ¿Querés cambiar una? Editá ACÁ
 # y listo: se actualiza en los bindings Y en todas las pistas en pantalla.
@@ -270,45 +283,66 @@ class App:
         tk.Label(
             self.root,
             text=f"🎯 objetivo: {self.config.pass_threshold:.0f}% por sonido",
-            bg=BG, fg=DIM, font=("TkDefaultFont", 8),
-        ).place(x=10, y=10)
+            bg=BG, fg=DIM, font=(UI, 9),
+        ).place(x=12, y=12)
 
         self.progress = tk.Label(
-            self.root, text="", bg=BG, fg=DIM, font=("TkDefaultFont", 9)
+            self.root, text="", bg=BG, fg=DIM, font=(UI, 10)
         )
-        self.progress.pack(pady=(10, 0))
+        self.progress.pack(pady=(8, 0))
+
+        # Eyebrow: etiqueta de categoria en mayusculas (la firma HashiCorp mas
+        # portable). Marca toda la app como una "zona"; vive sobre la card target.
+        self.eyebrow = tk.Label(
+            self.root, text="PRONUNCIATION TRAINER", bg=BG, fg=DIM,
+            font=(UI, 9, "bold"),
+        )
 
         # Barra tipo Tetris: un bloque por objetivo (derrotado / actual / pendiente
         # / jefe). El progreso de un vistazo.
         self.progress_blocks = tk.Frame(self.root, bg=BG)
-        self.progress_blocks.pack(pady=(6, 0))
+        self.progress_blocks.pack(pady=(8, 0))
 
         self.incoming = tk.Label(
             self.root,
             text="",
             bg=BG,
-            fg=DIM,
-            font=("TkDefaultFont", 10),
+            fg=INK_MUTED,
+            font=(UI, 11),
             wraplength=820,
         )
-        self.incoming.pack(pady=(4, 0))
+        self.incoming.pack(pady=(8, 0))
+
+        # Eyebrow encima de la card target (pack apenas antes que el target).
+        self.eyebrow.pack(pady=(8, 0))
 
         self.target = tk.Label(
             self.root,
             text="",
-            bg=BG,
+            bg=SURFACE1,
             fg=FG,
-            font=("TkDefaultFont", 30, "bold"),
+            font=(UI, 28, "bold"),
             wraplength=820,
         )
-        self.target.pack(expand=True, pady=(4, 0))
+        # HashiCorp = surface-lift, NO shadow: el hairline gris 1px + el escalon
+        # charcoal (BG -> SURFACE1) bastan para delimitar la card. Sin offset frame.
+        _bordered(self.target, 1)
+        # ipadx/ipady must go on pack(), not .config(), for tk.Label
+        self.target.pack(expand=True, pady=(4, 0), ipadx=24, ipady=18)
 
         # Cuadro multi-linea para PEGAR un parrafo (Enter = salto de linea;
         # Shift+Enter = empezar).
         self.entry = tk.Text(
-            self.root, font=("TkDefaultFont", 13), width=64, height=5,
-            bg="#1a222c", fg=FG, insertbackground=FG, relief="flat",
+            self.root, font=(UI, 11), width=64, height=5,
+            bg=SURFACE1, fg=FG, insertbackground=FG, relief="flat",
             wrap="word", padx=10, pady=8,
+        )
+        # Focus ring fiel al de HashiCorp: el borde se pone ACCENT azul cuando el
+        # campo tiene foco de teclado (highlightcolor) y vuelve al hairline gris al
+        # perderlo (highlightbackground). Feature nativa de tk, sin binding extra.
+        self.entry.config(
+            relief="flat", highlightthickness=1,
+            highlightcolor=ACCENT, highlightbackground=HAIRLINE,
         )
         self.entry.pack()
 
@@ -316,60 +350,73 @@ class App:
         self.mic_row = tk.Frame(self.root, bg=BG)
         tk.Label(
             self.mic_row, text="🎙 Micrófono:", bg=BG, fg=DIM,
-            font=("TkDefaultFont", 11),
+            font=(UI, 10),
         ).pack(side="left", padx=(0, 6))
         self._mic_options = self._list_microphones()
         self.mic_var = tk.StringVar(value=self._mic_options[0][0])
         self.mic_menu = tk.OptionMenu(
             self.mic_row, self.mic_var, *[label for label, _dev in self._mic_options]
         )
+        # Control secundario (surface-2 + hairline): monocromo, sin fill de color.
         self.mic_menu.config(
-            bg="#1f2630", fg=FG, activebackground=ACCENT, activeforeground=BG,
-            relief="flat", highlightthickness=0, font=("TkDefaultFont", 10),
+            bg=SURFACE2, fg=FG, activebackground=SURFACE1, activeforeground=FG,
+            relief="flat", font=(UI, 10, "bold"),
         )
-        self.mic_menu["menu"].config(bg="#1f2630", fg=FG, activebackground=ACCENT)
+        _bordered(self.mic_menu, 1)
+        self.mic_menu["menu"].config(
+            bg=SURFACE2, fg=FG, activebackground=SURFACE1, activeforeground=FG,
+        )
         self.mic_menu.pack(side="left")
+        # Boton secundario HashiCorp = surface-2 charcoal + hairline + ink (NO
+        # fill amarillo): el unico color vivo se reserva para titulo/foco/activo.
         self.mic_test_btn = tk.Button(
             self.mic_row,
             text="🎧 Probar (Ctrl+T)",
             command=self._on_mic_test,
-            bg="#1f2630", fg=FG, activebackground=ACCENT, activeforeground=BG,
-            relief="flat", bd=0, padx=10, font=("TkDefaultFont", 10), cursor="hand2",
+            bg=SURFACE2, fg=FG, activebackground=SURFACE1, activeforeground=FG,
+            relief="flat", bd=0, padx=10, font=(UI, 10, "bold"), cursor="hand2",
         )
-        self.mic_test_btn.pack(side="left", padx=(8, 0))
+        _bordered(self.mic_test_btn, 1)
+        # ipady is a geometry manager option, not a widget option
+        self.mic_test_btn.pack(side="left", padx=(8, 0), ipady=2)
 
+        # Badge de score: texto sin borde (idle) -> chip con fill semantico +
+        # hairline al mostrar estado. Fuente UI (HashiCorp: no mono).
         self.score = tk.Label(
-            self.root, text="", bg=BG, fg=FG, font=("TkDefaultFont", 15, "bold")
+            self.root, text="", bg=BG, fg=DIM, font=(UI, 15, "bold"),
         )
-        self.score.pack(pady=(10, 0))
+        # ipadx/ipady are geometry manager options, not widget config options
+        self.score.pack(pady=(8, 0), ipadx=10, ipady=4)
 
         # Desglose por fonema (palabra) o por palabra (jefe): cada unidad se
         # pinta segun su score. Aca el usuario VE donde estuvo el problema.
         self.units = tk.Frame(self.root, bg=BG)
-        self.units.pack(pady=(6, 0))
+        self.units.pack(pady=(8, 0))
 
+        # Body relajado: INK_MUTED por defecto (HashiCorp: body es el gris muteado,
+        # los titulos/enfasis son blanco/acento). El color de estado lo lleva el badge.
         self.feedback = tk.Label(
             self.root,
             text="",
             bg=BG,
-            fg=YELLOW,
-            font=("TkDefaultFont", 11),
+            fg=INK_MUTED,
+            font=(UI, 12),
             wraplength=820,
         )
-        self.feedback.pack(pady=(4, 0))
+        self.feedback.pack(pady=(8, 0))
 
-        # Consejo del LLM (DeepSeek): recuadro DESTACADO debajo de la pista
-        # estatica. En color de acento -> es la estrella.
+        # Consejo del LLM (DeepSeek): card surface-1 tranquila debajo de la pista
+        # estatica. Idle = texto DIM sin recuadro; al mostrarse, surface-1 + hairline.
         self.coach_tip = tk.Label(
             self.root,
             text="",
             bg=BG,
-            fg=ACCENT,
-            font=("TkDefaultFont", 12, "bold"),
+            fg=DIM,
+            font=(UI, 12, "bold"),
             wraplength=780,
             justify="center",
         )
-        self.coach_tip.pack(pady=(6, 0), ipadx=12, ipady=7)
+        self.coach_tip.pack(pady=(8, 0), ipadx=12, ipady=8)
 
         # Barra inferior, TRES renglones. Se packea de abajo hacia arriba:
         # sistema (lo mas abajo), luego las teclas, luego ESPACIO arriba.
@@ -377,23 +424,27 @@ class App:
         self.hint_sys = tk.Label(
             self.root,
             text="Ctrl+R: reset   ·   ESC: salir",
-            bg=BG, fg=DIM, font=("TkDefaultFont", 8),
+            bg=BG, fg=DIM, font=(UI, 9),
         )
         self.hint_sys.pack(side="bottom", pady=(0, 8))
 
         # Renglon 2: teclas de accion (X · A · S · D · F · R), tenue.
         self.hint_keys = tk.Label(
-            self.root, text="", bg=BG, fg=DIM, font=("TkDefaultFont", 9),
+            self.root, text="", bg=BG, fg=DIM, font=(UI, 10),
             wraplength=850, justify="center",
         )
         self.hint_keys.pack(side="bottom", pady=(0, 4))
 
-        # Renglon 1: la instruccion de ESPACIO, en VERDE y en negrita.
+        # Renglon 1: la instruccion de ESPACIO como chip SECUNDARIO (surface-2 +
+        # hairline + ink). HashiCorp: el acento azul se reserva para titulo/foco/activo,
+        # asi que esta afordancia secundaria va monocroma, no con fill de color.
         self.hint = tk.Label(
-            self.root, text="", bg=BG, fg=GREEN, font=("TkDefaultFont", 11, "bold"),
+            self.root, text="", bg=SURFACE2, fg=FG, font=(UI, 12, "bold"),
             wraplength=850, justify="center",
         )
-        self.hint.pack(side="bottom", pady=(6, 0))
+        _bordered(self.hint, 1)
+        # ipadx/ipady are geometry manager options, not widget config options
+        self.hint.pack(side="bottom", pady=(8, 0), ipadx=10, ipady=3)
 
         self._show_input()
 
@@ -515,14 +566,16 @@ class App:
         self.progress.config(text="")
         self.incoming.config(text="")
         self._render_progress_blocks()  # game es None -> limpia los bloques
-        self.target.config(text="🎤  Pronunciation Tetris", fg=ACCENT)
-        self.score.config(text="")
+        self.target.config(
+            text="Pronunciation Tetris", bg=SURFACE1, fg=ACCENT, font=(UI, 28, "bold")
+        )
+        self._score_badge("", BG, DIM)
         self._clear_units()
         self._coach_clear()
         self.feedback.config(
             text="Pegá un párrafo (oraciones separadas por “.” o saltos de línea) "
             "y apretá Shift+Enter.",
-            fg=YELLOW,
+            fg=INK_MUTED,
         )
         self._refresh_hints()
         self.entry.delete("1.0", "end")
@@ -556,15 +609,17 @@ class App:
         self._render_status_line()  # palabras a mejorar / proxima, bajo la barra
 
         # Tamaño segun largo: el parrafo (jefe) chico, oracion mediana, palabra
-        # grande. El jefe ademas baja a 12 si es MUY largo (>220 chars).
+        # grande. El jefe ademas baja a 15 si es MUY largo (>220 chars).
+        # BOSS -> fill YELLOW con texto NEGRO (warning = el jefe es el bloque duro).
+        # SENTENCE -> card SURFACE1 con texto FG. WORD -> SURFACE1 con texto ACCENT.
         if t.kind == Kind.BOSS:
-            size = 12 if len(t.label) > 220 else 15
-            self.target.config(text=t.label, fg=YELLOW, font=("TkDefaultFont", size, "bold"))
+            size = 15 if len(t.label) > 220 else 18
+            self.target.config(text=t.label, bg=YELLOW, fg=BG, font=(UI, size, "bold"))
         elif t.kind == Kind.SENTENCE:
-            size = 15 if len(t.label) > 90 else 19
-            self.target.config(text=t.label, fg=FG, font=("TkDefaultFont", size, "bold"))
+            size = 14 if len(t.label) > 90 else 16
+            self.target.config(text=t.label, bg=SURFACE1, fg=FG, font=(UI, size, "bold"))
         else:  # word (practica)
-            self.target.config(text=t.label, fg=ACCENT, font=("TkDefaultFont", 32, "bold"))
+            self.target.config(text=t.label, bg=SURFACE1, fg=ACCENT, font=(UI, 20, "bold"))
 
     def _render_status_line(self) -> None:
         """Renglon bajo la barra de progreso: las palabras A MEJORAR del objetivo
@@ -577,7 +632,7 @@ class App:
             resumen = "  |  ".join(f"{w}×{c}" for w, c in worst[:8])
             self.incoming.config(
                 text=f"{self._k('practice')} (Practicar):  {resumen}",
-                fg=YELLOW,
+                fg=INK_MUTED,
             )
             return
         upcoming = self.game.targets[self.game.index + 1 :]
@@ -601,17 +656,22 @@ class App:
             return
         for i, target in enumerate(self.game.targets):
             status = self._status.get(id(target))
-            color = {"defeated": GREEN, "failed": RED}.get(status, DIM)
+            # Color is the FILL of the chip, not text fg. Pendiente = surface-2.
+            bg_fill = {"defeated": GREEN, "failed": RED}.get(status, SURFACE2)
+            fg_text = BG if status in ("defeated", "failed") else INK_MUTED
             if target.kind == Kind.BOSS:
                 char = "♛"
             elif i == self.game.index:
                 char = "▶"  # objetivo actual
             else:
                 char = "■"
-            tk.Label(
-                self.progress_blocks, text=char, bg=BG, fg=color,
-                font=("TkDefaultFont", 11),
-            ).pack(side="left", padx=1)
+            lbl = tk.Label(
+                self.progress_blocks, text=char, bg=bg_fill, fg=fg_text,
+                font=(UI, 11, "bold"),
+                highlightthickness=1, highlightbackground=HAIRLINE,
+            )
+            # ipadx/ipady are geometry manager options, not widget config options
+            lbl.pack(side="left", padx=3, ipadx=6, ipady=2)
 
     def _flash(self, color: str) -> None:
         """Destello breve de la barra superior como feedback (pass/fail)."""
@@ -659,10 +719,10 @@ class App:
         self._word_attempts = 0  # arranca un objetivo nuevo
         self.last_audio = None  # grabacion del objetivo anterior ya no aplica
         self._render_target()
-        self.score.config(text="")
+        self._score_badge("", BG, DIM)
         self._clear_units()
         self._coach_clear()
-        self.feedback.config(text="", fg=YELLOW)
+        self.feedback.config(text="", fg=INK_MUTED)
         self._refresh_hints()
 
     def _on_space(self, _event=None) -> None:
@@ -877,7 +937,7 @@ class App:
         self._clear_units()
         self._coach_clear()
         # Semaforo en ROJO: el mic todavia se esta conectando, NO hables aun.
-        self.score.config(text="⏳  Preparando micrófono…", fg=DIM)
+        self._score_badge("⏳  Preparando micrófono…", BG, DIM)
         self.feedback.config(text="Esperá la luz verde. Todavía NO hables.", fg=DIM)
         self.hint.config(text="")
         self.hint_keys.config(text="")  # durante la grabacion no hay teclas
@@ -908,15 +968,18 @@ class App:
             Kind.SENTENCE: "Leé la oración completa, fuerte y claro.",
         }.get(kind, "Decí la palabra UNA sola vez, fuerte y claro.")
         if code == "listening":
-            self.score.config(text="🟢  ¡HABLÁ AHORA!", fg=GREEN)
-            self.feedback.config(text=que, fg=GREEN)
+            # Estado ACTIVO -> fill ACCENT (azul = "estás en vivo"); texto blanco.
+            # GREEN queda reservado SOLO para PASS, asi nunca significa dos cosas.
+            self._score_badge("🟢  ¡HABLÁ AHORA!", ACCENT, FG)
+            self.feedback.config(text=que, fg=INK_MUTED)
             self.hint.config(text="Cuando termines, quedate en silencio un toque.")
         elif code == "speech":
-            self.score.config(text="🎤  Te escucho…", fg=ACCENT)
-            self.feedback.config(text="Seguí. Callate al terminar para cerrar.", fg=ACCENT)
+            self._score_badge("🎤  Te escucho…", ACCENT, FG)
+            self.feedback.config(text="Seguí. Callate al terminar para cerrar.", fg=INK_MUTED)
         elif code == "processing":
-            self.score.config(text="⏳  Procesando…", fg=YELLOW)
-            self.feedback.config(text="Listo, dejá que Azure analice.", fg=YELLOW)
+            # Warning/working -> fill YELLOW con texto NEGRO (14:1).
+            self._score_badge("⏳  Procesando…", YELLOW, BG)
+            self.feedback.config(text="Listo, dejá que Azure analice.", fg=INK_MUTED)
             self.hint.config(text="")
 
     def _start_tts(self, text: str) -> None:
@@ -988,10 +1051,10 @@ class App:
             self.state = "fail"
             self._status[id(self.game.current)] = "failed"  # intentado, no derrotado
             self._render_progress_blocks()
-            self.score.config(text="—", fg=RED)
+            self._score_badge("—", RED, BG)
             self._clear_units()
             self._coach_clear()
-            self.feedback.config(text=a.error or "Algo salió mal.", fg=RED)
+            self.feedback.config(text=a.error or "Algo salió mal.", fg=INK_MUTED)
             self._refresh_hints()
             return
 
@@ -1042,15 +1105,15 @@ class App:
         if passed:
             self.state = "pass"
             self._flash(GREEN)
-            self.score.config(text=f"✅  {a.accuracy:.0f}%  ¡DERROTADA!", fg=GREEN)
+            self._score_badge(f"✅  {a.accuracy:.0f}%  ¡DERROTADA!", GREEN, BG)
             if by_recognition:
                 self.feedback.config(
                     text=f"Cerca (≥ {threshold - self.config.near_miss_margin:.0f}%) y te entendí perfecto. ✓  {heard}".strip(),
-                    fg=GREEN,
+                    fg=INK_MUTED,
                 )
             else:
                 self.feedback.config(
-                    text=f"Todos los sonidos ≥ {threshold:.0f}%.  {heard}".strip(), fg=GREEN
+                    text=f"Todos los sonidos ≥ {threshold:.0f}%.  {heard}".strip(), fg=INK_MUTED
                 )
             self._coach_clear()
             self._refresh_hints()
@@ -1058,16 +1121,16 @@ class App:
             self.state = "fail"
             self._flash(RED)
             if worst_label is not None:
-                self.score.config(
-                    text=f"❌  [{worst_label}] {worst_score:.0f}%  ·  faltan sonidos", fg=RED
+                self._score_badge(
+                    f"❌  [{worst_label}] {worst_score:.0f}%  ·  faltan sonidos", RED, BG
                 )
             else:
-                self.score.config(text=f"❌  {a.accuracy:.0f}%", fg=RED)
+                self._score_badge(f"❌  {a.accuracy:.0f}%", RED, BG)
             # Pista estatica: instantanea, discreta (vive en feedback). El umbral
             # vive arriba a la izquierda (goal_label), no acá: no es feedback.
             tip = self._fail_hint(a, is_multiword)
             self.feedback.config(
-                text=f"{tip}" + (f"   ·   {heard}" if heard else ""), fg=YELLOW
+                text=f"{tip}" + (f"   ·   {heard}" if heard else ""), fg=INK_MUTED
             )
             self._refresh_hints()
             # Consejo de DeepSeek: SE SUMA (no reemplaza) en el recuadro destacado.
@@ -1098,6 +1161,14 @@ class App:
         threading.Thread(target=work, daemon=True).start()
 
     # --------------------------------------------------- desglose visual
+    def _score_badge(self, text: str, fill: str, fg: str) -> None:
+        """Sets score badge as a filled chip (bordered) or idle text (no border)."""
+        self.score.config(text=text, bg=fill, fg=fg)
+        if fill != BG:
+            self.score.config(highlightthickness=1, highlightbackground=HAIRLINE)
+        else:
+            self.score.config(highlightthickness=0)
+
     def _score_color(self, score: float) -> str:
         # Verde = pasa el umbral (la nueva regla: TODOS deben estar verdes para
         # derrotar). Amarillo = cerca pero no alcanza. Rojo = lejos.
@@ -1122,25 +1193,30 @@ class App:
         # del parrafo) -> chicas, mas columnas y varias filas, para que no
         # desborde la ventana aunque el texto sea largo.
         if n <= 7:
-            font_size, sub, cols, pad = 19, 9, n, (5, 2)
+            font_size, sub, cols, pad = 16, 9, n, (5, 2)
         elif n <= 14:
-            font_size, sub, cols, pad = 14, 8, 7, (4, 2)
+            font_size, sub, cols, pad = 13, 8, 7, (4, 2)
         elif n <= 30:
             font_size, sub, cols, pad = 11, 7, 10, (3, 1)
         else:  # parrafo largo (jefe): lo mas compacto
             font_size, sub, cols, pad = 9, 7, 12, (3, 1)
         for i, (text, score) in enumerate(units):
+            # color is the FILL of the chip; BG (black) text on status fill.
             color = self._score_color(score)
-            cell = tk.Frame(self.units, bg=BG)
-            cell.grid(row=i // cols, column=i % cols, padx=pad[0], pady=pad[1])
+            cell = tk.Frame(
+                self.units, bg=color,
+                highlightthickness=1, highlightbackground=HAIRLINE,
+            )
+            # ipadx/ipady are geometry manager options, not widget config options
+            cell.grid(row=i // cols, column=i % cols, padx=pad[0], pady=pad[1], ipadx=4, ipady=2)
             wlabel = tk.Label(
-                cell, text=text, bg=BG, fg=color,
-                font=("TkDefaultFont", font_size, "bold"),
+                cell, text=text, bg=color, fg=BG,
+                font=(UI, font_size, "bold"),
             )
             wlabel.pack()
             slabel = tk.Label(
-                cell, text=f"{score:.0f}", bg=BG, fg=color,
-                font=("TkDefaultFont", sub),
+                cell, text=f"{score:.0f}", bg=color, fg=BG,
+                font=(UI, sub, "bold"),
             )
             slabel.pack()
             if clickable:
@@ -1155,15 +1231,18 @@ class App:
 
     # ---- recuadro del consejo de DeepSeek (la pista estatica vive en feedback) --
     def _coach_clear(self) -> None:
-        self.coach_tip.config(text="", bg=BG)
+        self.coach_tip.config(text="", bg=BG, fg=DIM, highlightthickness=0)
 
     def _coach_loading(self) -> None:
         # Mientras DeepSeek piensa: texto tenue, sin recuadro.
-        self.coach_tip.config(text="🧠 pensando un consejo…", bg=BG, fg=DIM)
+        self.coach_tip.config(text="🧠 pensando un consejo…", bg=BG, fg=DIM, highlightthickness=0)
 
     def _coach_show(self, tip: str) -> None:
-        # Consejo listo: recuadro destacado, color de acento, en negrita.
-        self.coach_tip.config(text=f"🧠  {tip}", bg="#16212b", fg=ACCENT)
+        # Consejo listo: SURFACE1 card + hairline + FG text (surface-1 elevation).
+        self.coach_tip.config(
+            text=f"🧠  {tip}", bg=SURFACE1, fg=FG,
+            highlightthickness=1, highlightbackground=HAIRLINE,
+        )
 
     def _fail_hint(self, a: Assessment, is_multiword: bool) -> str:
         """Texto accionable de 'que arreglar' (el desglose ya muestra los scores)."""
@@ -1188,13 +1267,14 @@ class App:
         self.incoming.config(text="")
         for child in self.progress_blocks.winfo_children():
             child.destroy()
+        # WIN: GREEN fill hero card with BG (black) text — the trophy block.
         self.target.config(
-            text="🏆  ¡GANASTE!", fg=GREEN, font=("TkDefaultFont", 40, "bold")
+            text="🏆  ¡GANASTE!", bg=GREEN, fg=BG, font=(UI, 30, "bold")
         )
-        self.score.config(text="")
+        self._score_badge("", BG, DIM)
         self._clear_units()
         self.feedback.config(
-            text="Leíste todo el párrafo. ¡Crack!", fg=GREEN
+            text="Leíste todo el párrafo. ¡Crack!", fg=INK_MUTED
         )
         self._refresh_hints()
 
@@ -1209,15 +1289,19 @@ def main() -> None:
         root.title("Pronunciation Tetris — configuracion")
         root.configure(bg=BG)
         root.geometry("620x220")
+        # Card SURFACE1 con borde RED (semantic-error): mismo lenguaje surface-lift
+        # que la app, el error marcado por el hairline rojo en vez de fill de color.
         tk.Label(
             root,
             text=str(exc),
-            bg=BG,
-            fg=RED,
-            font=("TkDefaultFont", 13),
+            bg=SURFACE1,
+            fg=FG,
+            font=(UI, 12),
             wraplength=560,
             justify="left",
-        ).pack(expand=True, padx=20, pady=20)
+            highlightthickness=1,
+            highlightbackground=RED,
+        ).pack(expand=True, padx=20, pady=20, ipadx=12, ipady=10)
         tk.Label(
             root, text="Cerrá, configurá .env y volvé a abrir.", bg=BG, fg=DIM
         ).pack(pady=(0, 16))

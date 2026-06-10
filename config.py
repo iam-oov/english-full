@@ -1,7 +1,9 @@
 """Configuracion del juego.
 
 Lee las credenciales de Azure y los parametros del juego desde variables de
-entorno o desde un archivo .env local (parser minimo, sin dependencias).
+entorno o desde un archivo .env (parser minimo, sin dependencias). El .env se
+busca en varios lugares (ver `_env_search_paths`): un override explicito, el
+directorio XDG de la app instalada, y por ultimo junto al codigo fuente (dev).
 """
 
 from __future__ import annotations
@@ -27,6 +29,29 @@ def _load_dotenv(path: Path) -> None:
         key = key.strip()
         value = value.strip().strip('"').strip("'")
         os.environ.setdefault(key, value)
+
+
+def _config_dir() -> Path:
+    """Directorio XDG de la app (`~/.config/pronunciation-tetris` por defecto)."""
+    xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    base = Path(xdg) if xdg else Path.home() / ".config"
+    return base / "pronunciation-tetris"
+
+
+def _env_search_paths() -> list[Path]:
+    """Lugares donde buscar el .env, en orden de prioridad (primero gana por clave).
+
+    1. `$PRONUNCIATION_TETRIS_ENV`: override explicito (si esta seteado).
+    2. XDG: `~/.config/pronunciation-tetris/.env` (donde vive el .env instalado).
+    3. Junto al codigo fuente: `<dir de config.py>/.env` (flujo de dev, sin cambios).
+    """
+    paths: list[Path] = []
+    override = os.environ.get("PRONUNCIATION_TETRIS_ENV", "").strip()
+    if override:
+        paths.append(Path(override))
+    paths.append(_config_dir() / ".env")
+    paths.append(Path(__file__).resolve().parent / ".env")
+    return paths
 
 
 @dataclass(frozen=True)
@@ -57,15 +82,17 @@ class Config:
 
     @classmethod
     def load(cls) -> "Config":
-        _load_dotenv(Path(__file__).resolve().parent / ".env")
+        for env_path in _env_search_paths():
+            _load_dotenv(env_path)
 
         key = os.environ.get("AZURE_SPEECH_KEY", "").strip()
         region = os.environ.get("AZURE_SPEECH_REGION", "").strip()
         if not key or key == "pega-tu-key-aca" or not region:
             raise RuntimeError(
                 "Faltan credenciales de Azure.\n"
-                "Copiá .env.example a .env y completá AZURE_SPEECH_KEY y "
-                "AZURE_SPEECH_REGION.\n"
+                "Creá ~/.config/pronunciation-tetris/.env (o, en dev, copiá "
+                ".env.example a .env junto al código) y completá AZURE_SPEECH_KEY "
+                "y AZURE_SPEECH_REGION.\n"
                 "Mirá las instrucciones dentro de .env.example."
             )
 

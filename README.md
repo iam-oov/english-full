@@ -20,6 +20,40 @@ una pronunciacion pesima. Azure **Pronunciation Assessment** trabaja a nivel
 fonema (la tecnica GOP, _Goodness of Pronunciation_) y devuelve un score real de
 calidad, ya calibrado.
 
+## Instalar como app (paquete `.deb`)
+
+Para usar el juego como una aplicación instalada (comando en el PATH + entrada
+en el menú de apps), sin clonar el repo ni usar uv en la máquina destino.
+
+```bash
+bash build_deb.sh                                   # genera pronunciation-tetris_<ver>_<arch>.deb
+sudo apt install ./pronunciation-tetris_*.deb       # instala y resuelve dependencias del sistema
+```
+
+> Con `apt install ./archivo.deb` las dependencias del sistema (`python3-tk`,
+> `libasound2`, etc.) se resuelven solas. Si preferís `sudo dpkg -i`, corré
+> después `sudo apt -f install` para completarlas.
+
+Qué hace el paquete: copia el código a `/opt/pronunciation-tetris/`, crea ahí un
+**venv del Python del sistema** (3.12) e instala las dependencias de runtime
+(Azure SDK, `requests`, `sounddevice`). El Python del sistema es a propósito: el
+standalone de uv linkea `libX11` estáticamente y rompe `XInitThreads()`.
+
+**Credenciales:** la primera vez que corrés el comando se crea
+`~/.config/pronunciation-tetris/.env` (a partir del template) y se te avisa.
+Editalo con tu `AZURE_SPEECH_KEY` / `AZURE_SPEECH_REGION` (ver paso 2 más abajo
+para crear el recurso de Azure) y volvé a abrir el juego. No hace falta `sudo`.
+
+```bash
+pronunciation-tetris        # o buscá "Pronunciation Tetris" en el menú de apps
+```
+
+**Desinstalar:** `sudo apt remove pronunciation-tetris`. Se borra el venv; tu
+`~/.config/pronunciation-tetris/.env` queda intacto (son tus credenciales).
+
+> Lo de abajo (**Setup** + **Jugar**) es para correr el juego **desde el código
+> fuente** con uv — el flujo de desarrollo.
+
 ## Setup
 
 ### 1. Dependencias del sistema (Ubuntu/Debian)

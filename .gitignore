@@ -123,6 +123,10 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Debian package build artifacts (build_deb.sh)
+*.deb
+/pronunciation-tetris_*/
+
 # Environments
 .env
 .venv

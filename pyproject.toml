@@ -23,6 +23,17 @@ dependencies = [
 # El Python del sistema linkea libX11 dinamico, la misma que carga ctypes.
 python-preference = "only-system"
 
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.pytest.ini_options]
+# Los modulos viven en la raiz (scoring.py, etc.), no en un paquete instalado:
+# agregamos "." al path para que `from scoring import ...` resuelva sin instalar.
+pythonpath = ["."]
+testpaths = ["tests"]
+
 # Sin [build-system] a proposito: esto es una APLICACION, no una libreria
 # instalable. uv lo trata como proyecto "virtual" e instala solo las
 # dependencias en el .venv, sin intentar empaquetar el codigo. Se corre con

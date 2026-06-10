@@ -26,10 +26,12 @@ import sys
 import threading
 import tkinter as tk
 from dataclasses import dataclass
+from enum import Enum
 
-from coach import Coach
+from assessment import Assessment
 from config import Config
-from scorer import Assessment, Scorer
+from ports import PronunciationCoach, PronunciationScorer
+from scoring import judge
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -132,17 +134,37 @@ def _normalize_text(text: str) -> str:
 
 
 # Tipos de objetivo:
-#   "sentence" -> sub-jefe: una oracion del parrafo (se evalua por palabra)
-#   "boss"     -> jefe final: el parrafo completo
-#   "word"     -> palabra suelta (solo aparece en el modo practica con R)
-MULTIWORD = ("sentence", "boss")  # objetivos de varias palabras
+#   SENTENCE -> sub-jefe: una oracion del parrafo (se evalua por palabra)
+#   BOSS     -> jefe final: el parrafo completo
+#   WORD     -> palabra suelta (solo aparece en el modo practica con R)
+class Kind(str, Enum):
+    SENTENCE = "sentence"
+    BOSS = "boss"
+    WORD = "word"
+
+
+MULTIWORD = (Kind.SENTENCE, Kind.BOSS)  # objetivos de varias palabras
 
 
 @dataclass
 class Target:
     label: str  # lo que se muestra grande
     reference: str  # el texto que Azure evalua
-    kind: str  # "sentence" | "boss" | "word"
+    kind: Kind
+
+    # Named constructors: centralizan la creacion y evitan pasar el kind a mano
+    # (un solo lugar que sabe que un sub-jefe es SENTENCE, el jefe BOSS, etc.).
+    @classmethod
+    def sentence(cls, text: str) -> "Target":
+        return cls(label=text, reference=text, kind=Kind.SENTENCE)
+
+    @classmethod
+    def boss(cls, paragraph: str) -> "Target":
+        return cls(label=paragraph, reference=paragraph, kind=Kind.BOSS)
+
+    @classmethod
+    def word(cls, w: str) -> "Target":
+        return cls(label=w, reference=w, kind=Kind.WORD)
 
 
 class Game:
@@ -150,16 +172,12 @@ class Game:
 
     def __init__(self, sentences: list[str]) -> None:
         # Cada oracion es un sub-jefe, en orden de lectura.
-        self.targets: list[Target] = [
-            Target(label=s, reference=s, kind="sentence") for s in sentences
-        ]
+        self.targets: list[Target] = [Target.sentence(s) for s in sentences]
         # El jefe final = leer el parrafo entero (solo si hay mas de una oracion).
         # Lo reconstruimos limpio desde las oraciones (sin lineas en blanco).
         if len(sentences) > 1:
             paragraph = ". ".join(sentences) + "."
-            self.targets.append(
-                Target(label=paragraph, reference=paragraph, kind="boss")
-            )
+            self.targets.append(Target.boss(paragraph))
         self.index = 0
 
     @property
@@ -175,11 +193,19 @@ class Game:
 
 
 class App:
-    def __init__(self, root: tk.Tk, config: Config) -> None:
+    def __init__(
+        self,
+        root: tk.Tk,
+        config: Config,
+        scorer: PronunciationScorer,
+        coach: PronunciationCoach,
+    ) -> None:
         self.root = root
         self.config = config
-        self.scorer = Scorer(config)
-        self.coach = Coach(config)  # DeepSeek (opcional): ranking + consejos
+        # Adaptadores inyectados: Azure/DeepSeek en produccion, dobles en tests.
+        # App solo conoce los puertos (ports.py), nunca las clases concretas.
+        self.scorer = scorer
+        self.coach = coach  # DeepSeek (opcional): ranking + consejos
         self.results: "queue.Queue[tuple[str, object]]" = queue.Queue()
 
         self.game: Game | None = None
@@ -415,7 +441,7 @@ class App:
     def _keys_line(self) -> str:
         """Renglon 2 de la barra: teclas de accion segun el estado/objetivo."""
         # Drilleando una palabra: solo audio + salir de practica + navegar.
-        if self.game is not None and self.game.current.kind == "word":
+        if self.game is not None and self.game.current.kind == Kind.WORD:
             items = [f"{self._k('retry')}: reintentar", f"{self._k('mine')}: tu voz",
                      f"{self._k('correct')}: la correcta"]
             if self._practice_origin is not None:
@@ -431,7 +457,7 @@ class App:
         items = []
         # A es toggle: 'ir al jefe' desde una oracion, 'volver' desde el jefe.
         if self.game is not None and self._boss_index() is not None:
-            if self.game.current.kind == "boss":
+            if self.game.current.kind == Kind.BOSS:
                 items.append(f"{self._k('boss')}: volver")
             else:
                 items.append(f"{self._k('boss')}: ir al jefe")
@@ -456,13 +482,13 @@ class App:
             self.hint_keys.config(text="")
             return
         # En juego (ready / fail / pass): ESPACIO cambia segun el momento.
-        kind = self.game.current.kind if self.game else "word"
+        kind = self.game.current.kind if self.game else Kind.WORD
         if self.state == "pass":
             space = "ESPACIO: siguiente"
         elif self.state == "fail":
             space = "ESPACIO: reintentar"
         else:  # ready
-            verbo = {"boss": "el párrafo", "sentence": "la oración"}.get(kind, "la palabra")
+            verbo = {Kind.BOSS: "el párrafo", Kind.SENTENCE: "la oración"}.get(kind, "la palabra")
             space = f"ESPACIO: grabá {verbo}"
         self.hint.config(text=space)
         self.hint_keys.config(text=self._keys_line())
@@ -507,7 +533,7 @@ class App:
         t = self.game.current
         n = len(self.game.targets)
         kind_label = {
-            "word": "Práctica", "sentence": "Oración", "boss": "👑 JEFE FINAL"
+            Kind.WORD: "Práctica", Kind.SENTENCE: "Oración", Kind.BOSS: "👑 JEFE FINAL"
         }.get(t.kind, "Objetivo")
         self.progress.config(text=f"{kind_label}   ·   {self.game.index + 1} / {n}")
         self._render_progress_blocks()
@@ -515,10 +541,10 @@ class App:
 
         # Tamaño segun largo: el parrafo (jefe) chico, oracion mediana, palabra
         # grande. El jefe ademas baja a 12 si es MUY largo (>220 chars).
-        if t.kind == "boss":
+        if t.kind == Kind.BOSS:
             size = 12 if len(t.label) > 220 else 15
             self.target.config(text=t.label, fg=YELLOW, font=("TkDefaultFont", size, "bold"))
-        elif t.kind == "sentence":
+        elif t.kind == Kind.SENTENCE:
             size = 15 if len(t.label) > 90 else 19
             self.target.config(text=t.label, fg=FG, font=("TkDefaultFont", size, "bold"))
         else:  # word (practica)
@@ -542,9 +568,9 @@ class App:
         nxt = upcoming[0] if upcoming else None
         if nxt is None:
             self.incoming.config(text="¡Último objetivo!", fg=DIM)
-        elif nxt.kind == "boss":
+        elif nxt.kind == Kind.BOSS:
             self.incoming.config(text="Próxima:  👑 EL JEFE (todo el párrafo)", fg=DIM)
-        elif nxt.kind == "word":
+        elif nxt.kind == Kind.WORD:
             self.incoming.config(text=f"Próxima:  {nxt.label}", fg=DIM)
         else:
             self.incoming.config(text="")  # próxima oración: sin label redundante
@@ -560,7 +586,7 @@ class App:
         for i, target in enumerate(self.game.targets):
             status = self._status.get(id(target))
             color = {"defeated": GREEN, "failed": RED}.get(status, DIM)
-            if target.kind == "boss":
+            if target.kind == Kind.BOSS:
                 char = "♛"
             elif i == self.game.index:
                 char = "▶"  # objetivo actual
@@ -676,7 +702,7 @@ class App:
         boss_idx = self._boss_index()
         if boss_idx is None:
             return  # parrafo de una sola oracion: no hay jefe separado
-        if self.game.current.kind == "boss":
+        if self.game.current.kind == Kind.BOSS:
             back = next(
                 (i for i, t in enumerate(self.game.targets) if t is self._return_target),
                 0,  # si no hay a donde volver, a la primera
@@ -715,7 +741,7 @@ class App:
         if self.game is None:
             return None
         return next(
-            (i for i, t in enumerate(self.game.targets) if t.kind == "boss"), None
+            (i for i, t in enumerate(self.game.targets) if t.kind == Kind.BOSS), None
         )
 
     def _cur_errors(self) -> dict[str, int]:
@@ -754,7 +780,7 @@ class App:
         if self.busy or self.game is None or self.state not in ("ready", "fail", "pass"):
             return
         # Si ya estoy drilleando (palabra) -> salir a la oracion de origen.
-        if self.game.current.kind == "word" and self._practice_origin is not None:
+        if self.game.current.kind == Kind.WORD and self._practice_origin is not None:
             idx = next(
                 (i for i, t in enumerate(self.game.targets) if t is self._practice_origin),
                 None,
@@ -774,7 +800,7 @@ class App:
             return
         # Insertamos las palabras a practicar JUSTO antes del objetivo actual; al
         # avanzar por ellas (o con R/W) volvés a la oracion y se limpian.
-        practice = [Target(label=w, reference=w, kind="word") for w in worst]
+        practice = [Target.word(w) for w in worst]
         self._practice_origin = self.game.current
         self._practice_targets = practice
         i = self.game.index
@@ -843,7 +869,7 @@ class App:
         device = self.mic_device
         long_form = self.game.current.kind in MULTIWORD  # tolera pausas largas
         # El jefe (parrafo entero) usa reconocimiento CONTINUO (sin tope de ~15s).
-        continuous = self.game.current.kind == "boss"
+        continuous = self.game.current.kind == Kind.BOSS
 
         def on_status(code: str) -> None:
             # Corre en hilos del SDK: solo encolar, nunca tocar tkinter aca.
@@ -860,10 +886,10 @@ class App:
 
     def _set_recording_status(self, code: str) -> None:
         """Semaforo durante la grabacion, manejado por eventos del SDK."""
-        kind = self.game.current.kind if self.game else "word"
+        kind = self.game.current.kind if self.game else Kind.WORD
         que = {
-            "boss": "Leé TODO el párrafo (podés pausar entre oraciones).",
-            "sentence": "Leé la oración completa, fuerte y claro.",
+            Kind.BOSS: "Leé TODO el párrafo (podés pausar entre oraciones).",
+            Kind.SENTENCE: "Leé la oración completa, fuerte y claro.",
         }.get(kind, "Decí la palabra UNA sola vez, fuerte y claro.")
         if code == "listening":
             self.score.config(text="🟢  ¡HABLÁ AHORA!", fg=GREEN)
@@ -975,28 +1001,23 @@ class App:
         # Las PALABRAS (oracion/parrafo) son clickeables para oirlas; los fonemas no.
         self._render_units(units, clickable=is_multiword)
 
-        # REGLA 1 (exigente): se derrota si CADA sonido supera el umbral.
-        scores = [s for _label, s in units]
-        if scores:
-            passed_strict = all(s >= threshold for s in scores)
-            worst_label, worst_score = min(units, key=lambda u: u[1])
-        else:
-            passed_strict = a.accuracy >= threshold
-            worst_label, worst_score = None, a.accuracy
-
-        # REGLA 2 (2da via): si el PROMEDIO quedo a no mas de 'margin' puntos del
-        # umbral Y el reconocedor escucho la palabra correcta, pasa igual.
-        margin = self.config.near_miss_margin
+        # Regla de aprobado (dominio puro en scoring.py): regla estricta — TODOS
+        # los sonidos >= umbral — mas el rescate near-miss. La justificacion
+        # detallada de cada via vive en scoring.judge.
         reference = self.game.current.reference
         recognized_ok = (
             _normalize_text(a.recognized_text) == _normalize_text(reference)
         )
-        # 'near' solo rescata cuando el promedio quedo CORTO (debajo del umbral)
-        # pero por <= margin. Si el promedio ya esta arriba del umbral pero un
-        # fonema fallo (ej: entered 96% con d=73), NO rescata -> gana la regla 1.
-        near = (threshold - margin) <= a.accuracy < threshold
-        passed = passed_strict or (near and recognized_ok)
-        by_recognition = passed and not passed_strict  # gano por la 2da via
+        verdict = judge(
+            units,
+            accuracy=a.accuracy,
+            recognized_ok=recognized_ok,
+            threshold=threshold,
+            near_miss_margin=self.config.near_miss_margin,
+        )
+        passed = verdict.passed
+        by_recognition = verdict.by_recognition
+        worst_label, worst_score = verdict.worst_label, verdict.worst_score
 
         # Estado para los cuadritos: verde si lo derrotaste, rojo si no.
         self._status[id(self.game.current)] = "defeated" if passed else "failed"
@@ -1008,7 +1029,7 @@ class App:
             self.score.config(text=f"✅  {a.accuracy:.0f}%  ¡DERROTADA!", fg=GREEN)
             if by_recognition:
                 self.feedback.config(
-                    text=f"Cerca (≥ {threshold - margin:.0f}%) y te entendí perfecto. ✓  {heard}".strip(),
+                    text=f"Cerca (≥ {threshold - self.config.near_miss_margin:.0f}%) y te entendí perfecto. ✓  {heard}".strip(),
                     fg=GREEN,
                 )
             else:
@@ -1187,8 +1208,14 @@ def main() -> None:
         root.mainloop()
         return
 
+    # Composition root: el UNICO lugar que conoce los adaptadores concretos. Se
+    # importan localmente a proposito -> asi importar `app` (p. ej. desde un
+    # test) no arrastra el SDK de Azure ni HTTP, y App queda testeable con dobles.
+    from coach import Coach
+    from scorer import Scorer
+
     root = tk.Tk()
-    App(root, config)
+    App(root, config, Scorer(config), Coach(config))
     root.mainloop()
 
 

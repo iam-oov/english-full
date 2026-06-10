@@ -286,54 +286,69 @@ class App:
             bg=BG, fg=DIM, font=(UI, 9),
         ).place(x=12, y=12)
 
+        # Columna central de ancho fijo: agrupa el contenido y lo centra como un
+        # bloque, para que en pantallas anchas (ultrawide) NO quede flotando en una
+        # franja con enormes vacios negros a los costados. Reemplaza el layout que
+        # colgaba cada widget directo de root. flash_bar (arriba) y los hints (abajo)
+        # siguen en root; todo lo del medio vive en este contenedor.
+        self.content = tk.Frame(self.root, bg=BG)
+        self.content.pack(expand=True)
+
         self.progress = tk.Label(
-            self.root, text="", bg=BG, fg=DIM, font=(UI, 10)
+            self.content, text="", bg=BG, fg=DIM, font=(UI, 10)
         )
         self.progress.pack(pady=(8, 0))
 
         # Eyebrow: etiqueta de categoria en mayusculas (la firma HashiCorp mas
         # portable). Marca toda la app como una "zona"; vive sobre la card target.
         self.eyebrow = tk.Label(
-            self.root, text="PRONUNCIATION TRAINER", bg=BG, fg=DIM,
+            self.content, text="PRONUNCIATION TRAINER", bg=BG, fg=DIM,
             font=(UI, 9, "bold"),
         )
 
         # Barra tipo Tetris: un bloque por objetivo (derrotado / actual / pendiente
         # / jefe). El progreso de un vistazo.
-        self.progress_blocks = tk.Frame(self.root, bg=BG)
+        self.progress_blocks = tk.Frame(self.content, bg=BG)
         self.progress_blocks.pack(pady=(8, 0))
 
         self.incoming = tk.Label(
-            self.root,
+            self.content,
             text="",
             bg=BG,
             fg=INK_MUTED,
             font=(UI, 11),
-            wraplength=820,
+            wraplength=540,
         )
         self.incoming.pack(pady=(8, 0))
 
         # Eyebrow encima de la card target (pack apenas antes que el target).
         self.eyebrow.pack(pady=(8, 0))
 
+        # Card de lectura: SURFACE1 con harto aire (ipady) y texto a la izquierda en
+        # textos largos -> se lee como contenido, no como una alerta. El "peligro"
+        # del jefe NO va con fill amarillo full (eso gritaba ERROR): va por la barra
+        # de HP + un badge chico (Slice 3). Sin expand: la columna queda compacta y
+        # centrada como bloque (lo centra `content`, no este widget).
         self.target = tk.Label(
-            self.root,
+            self.content,
             text="",
             bg=SURFACE1,
             fg=FG,
             font=(UI, 28, "bold"),
-            wraplength=820,
+            wraplength=540,
         )
         # HashiCorp = surface-lift, NO shadow: el hairline gris 1px + el escalon
         # charcoal (BG -> SURFACE1) bastan para delimitar la card. Sin offset frame.
         _bordered(self.target, 1)
-        # ipadx/ipady must go on pack(), not .config(), for tk.Label
-        self.target.pack(expand=True, pady=(4, 0), ipadx=24, ipady=18)
+        # ipadx/ipady must go on pack(), not .config(), for tk.Label.
+        # fill="x" -> la card abarca el ancho de la columna y se lee como tarjeta
+        # (no como un bloque de texto flotando). El alto NO se expande (sin expand).
+        self.target.pack(pady=(8, 0), ipadx=24, ipady=20, fill="x")
 
         # Cuadro multi-linea para PEGAR un parrafo (Enter = salto de linea;
         # Shift+Enter = empezar).
         self.entry = tk.Text(
-            self.root, font=(UI, 11), width=64, height=5,
+            self.content, font=(UI, 11), width=60, height=5,
             bg=SURFACE1, fg=FG, insertbackground=FG, relief="flat",
             wrap="word", padx=10, pady=8,
         )
@@ -347,7 +362,7 @@ class App:
         self.entry.pack()
 
         # Selector de microfono (solo visible en la pantalla inicial).
-        self.mic_row = tk.Frame(self.root, bg=BG)
+        self.mic_row = tk.Frame(self.content, bg=BG)
         tk.Label(
             self.mic_row, text="🎙 Micrófono:", bg=BG, fg=DIM,
             font=(UI, 10),
@@ -383,37 +398,39 @@ class App:
         # Badge de score: texto sin borde (idle) -> chip con fill semantico +
         # hairline al mostrar estado. Fuente UI (HashiCorp: no mono).
         self.score = tk.Label(
-            self.root, text="", bg=BG, fg=DIM, font=(UI, 15, "bold"),
+            self.content, text="", bg=BG, fg=DIM, font=(UI, 15, "bold"),
         )
         # ipadx/ipady are geometry manager options, not widget config options
         self.score.pack(pady=(8, 0), ipadx=10, ipady=4)
 
         # Desglose por fonema (palabra) o por palabra (jefe): cada unidad se
         # pinta segun su score. Aca el usuario VE donde estuvo el problema.
-        self.units = tk.Frame(self.root, bg=BG)
+        # Vive en `content` (NO en root) para quedar dentro de la columna central.
+        self.units = tk.Frame(self.content, bg=BG)
         self.units.pack(pady=(8, 0))
 
         # Body relajado: INK_MUTED por defecto (HashiCorp: body es el gris muteado,
         # los titulos/enfasis son blanco/acento). El color de estado lo lleva el badge.
+        # wraplength = ancho de columna (540), igual que target/incoming.
         self.feedback = tk.Label(
-            self.root,
+            self.content,
             text="",
             bg=BG,
             fg=INK_MUTED,
             font=(UI, 12),
-            wraplength=820,
+            wraplength=540,
         )
         self.feedback.pack(pady=(8, 0))
 
         # Consejo del LLM (DeepSeek): card surface-1 tranquila debajo de la pista
         # estatica. Idle = texto DIM sin recuadro; al mostrarse, surface-1 + hairline.
         self.coach_tip = tk.Label(
-            self.root,
+            self.content,
             text="",
             bg=BG,
             fg=DIM,
             font=(UI, 12, "bold"),
-            wraplength=780,
+            wraplength=540,
             justify="center",
         )
         self.coach_tip.pack(pady=(8, 0), ipadx=12, ipady=8)
@@ -435,16 +452,21 @@ class App:
         )
         self.hint_keys.pack(side="bottom", pady=(0, 4))
 
-        # Renglon 1: la instruccion de ESPACIO como chip SECUNDARIO (surface-2 +
-        # hairline + ink). HashiCorp: el acento azul se reserva para titulo/foco/activo,
-        # asi que esta afordancia secundaria va monocroma, no con fill de color.
+        # ACCION PRINCIPAL: el chip de ESPACIO deja de ser un renglon chiquito al
+        # pie y pasa a ser un BOTON GIGANTE dentro de la columna central -> imposible
+        # de ignorar (jerarquia nivel 3). fill="x" lo hace abarcar toda la columna;
+        # ipady alto le da cuerpo de boton. Sigue monocromo (surface-2 + hairline):
+        # HashiCorp reserva el acento azul para titulo/foco/activo, no para CTAs.
+        # Click del mouse = misma accion que la tecla ESPACIO (aditivo; _on_space ya
+        # ignora el click en estado 'input'/'busy').
         self.hint = tk.Label(
-            self.root, text="", bg=SURFACE2, fg=FG, font=(UI, 12, "bold"),
-            wraplength=850, justify="center",
+            self.content, text="", bg=SURFACE2, fg=FG, font=(UI, 14, "bold"),
+            wraplength=520, justify="center", cursor="hand2",
         )
         _bordered(self.hint, 1)
+        self.hint.bind("<Button-1>", self._on_space)
         # ipadx/ipady are geometry manager options, not widget config options
-        self.hint.pack(side="bottom", pady=(8, 0), ipadx=10, ipady=3)
+        self.hint.pack(pady=(16, 0), ipadx=24, ipady=12, fill="x")
 
         self._show_input()
 
@@ -566,9 +588,13 @@ class App:
         self.progress.config(text="")
         self.incoming.config(text="")
         self._render_progress_blocks()  # game es None -> limpia los bloques
+        # Titulo: centrado (hero), y reseteo del borde por si venimos de un jefe
+        # (que deja el borde amarillo de 2px).
         self.target.config(
-            text="Pronunciation Tetris", bg=SURFACE1, fg=ACCENT, font=(UI, 28, "bold")
+            text="Pronunciation Tetris", bg=SURFACE1, fg=ACCENT,
+            font=(UI, 28, "bold"), justify="center", anchor="center",
         )
+        _bordered(self.target, 1)
         self._score_badge("", BG, DIM)
         self._clear_units()
         self._coach_clear()
@@ -610,16 +636,30 @@ class App:
 
         # Tamaño segun largo: el parrafo (jefe) chico, oracion mediana, palabra
         # grande. El jefe ademas baja a 15 si es MUY largo (>220 chars).
-        # BOSS -> fill YELLOW con texto NEGRO (warning = el jefe es el bloque duro).
-        # SENTENCE -> card SURFACE1 con texto FG. WORD -> SURFACE1 con texto ACCENT.
+        # Card de LECTURA: oracion/jefe a la izquierda (se lee como contenido, no
+        # como banner centrado); palabra suelta centrada (es corta).
+        # El "peligro" del jefe va por BORDE amarillo (2px), NO por fill amarillo
+        # full: el fill gritaba ERROR/alerta. SENTENCE/WORD vuelven al hairline 1px.
         if t.kind == Kind.BOSS:
             size = 15 if len(t.label) > 220 else 18
-            self.target.config(text=t.label, bg=YELLOW, fg=BG, font=(UI, size, "bold"))
+            self.target.config(
+                text=t.label, bg=SURFACE1, fg=FG, font=(UI, size, "bold"),
+                justify="left", anchor="w",
+                highlightthickness=2, highlightbackground=YELLOW,
+            )
         elif t.kind == Kind.SENTENCE:
             size = 14 if len(t.label) > 90 else 16
-            self.target.config(text=t.label, bg=SURFACE1, fg=FG, font=(UI, size, "bold"))
-        else:  # word (practica)
-            self.target.config(text=t.label, bg=SURFACE1, fg=ACCENT, font=(UI, 20, "bold"))
+            self.target.config(
+                text=t.label, bg=SURFACE1, fg=FG, font=(UI, size, "bold"),
+                justify="left", anchor="w",
+            )
+            _bordered(self.target, 1)
+        else:  # word (practica): una sola palabra -> centrada
+            self.target.config(
+                text=t.label, bg=SURFACE1, fg=ACCENT, font=(UI, 20, "bold"),
+                justify="center", anchor="center",
+            )
+            _bordered(self.target, 1)
 
     def _render_status_line(self) -> None:
         """Renglon bajo la barra de progreso: las palabras A MEJORAR del objetivo
@@ -630,10 +670,15 @@ class App:
         worst = self._worst_words() if self.game.current.is_multiword else []
         if worst:
             resumen = "  |  ".join(f"{w}×{c}" for w, c in worst[:8])
-            self.incoming.config(
-                text=f"{self._k('practice')} (Practicar):  {resumen}",
-                fg=INK_MUTED,
-            )
+            # El jefe rotula "Puntos débiles" (foco en QUE mejorar); la oracion
+            # invita a la cola de practica con la tecla R.
+            if self.game.current.kind == Kind.BOSS:
+                self.incoming.config(text=f"Puntos débiles:  {resumen}", fg=INK_MUTED)
+            else:
+                self.incoming.config(
+                    text=f"{self._k('practice')} (Practicar):  {resumen}",
+                    fg=INK_MUTED,
+                )
             return
         upcoming = self.game.targets[self.game.index + 1 :]
         nxt = upcoming[0] if upcoming else None
@@ -1192,14 +1237,16 @@ class App:
         # Pocas (fonemas de una palabra) -> grandes, una fila. Muchas (palabras
         # del parrafo) -> chicas, mas columnas y varias filas, para que no
         # desborde la ventana aunque el texto sea largo.
+        # ipad = aire INTERNO del tile (ipadx, ipady en el grid). Los tiles con
+        # pocas unidades (fonemas) respiran mas; los del jefe van compactos.
         if n <= 7:
-            font_size, sub, cols, pad = 16, 9, n, (5, 2)
+            font_size, sub, cols, pad, ipad = 16, 9, n, (5, 2), (6, 4)
         elif n <= 14:
-            font_size, sub, cols, pad = 13, 8, 7, (4, 2)
+            font_size, sub, cols, pad, ipad = 13, 8, 7, (4, 2), (4, 3)
         elif n <= 30:
-            font_size, sub, cols, pad = 11, 7, 10, (3, 1)
+            font_size, sub, cols, pad, ipad = 11, 7, 10, (3, 1), (3, 2)
         else:  # parrafo largo (jefe): lo mas compacto
-            font_size, sub, cols, pad = 9, 7, 12, (3, 1)
+            font_size, sub, cols, pad, ipad = 9, 7, 12, (3, 1), (3, 1)
         for i, (text, score) in enumerate(units):
             # color is the FILL of the chip; BG (black) text on status fill.
             color = self._score_color(score)
@@ -1208,14 +1255,17 @@ class App:
                 highlightthickness=1, highlightbackground=HAIRLINE,
             )
             # ipadx/ipady are geometry manager options, not widget config options
-            cell.grid(row=i // cols, column=i % cols, padx=pad[0], pady=pad[1], ipadx=4, ipady=2)
+            cell.grid(
+                row=i // cols, column=i % cols,
+                padx=pad[0], pady=pad[1], ipadx=ipad[0], ipady=ipad[1],
+            )
             wlabel = tk.Label(
                 cell, text=text, bg=color, fg=BG,
                 font=(UI, font_size, "bold"),
             )
             wlabel.pack()
             slabel = tk.Label(
-                cell, text=f"{score:.0f}", bg=color, fg=BG,
+                cell, text=f"{score:.0f}%", bg=color, fg=BG,
                 font=(UI, sub, "bold"),
             )
             slabel.pack()
@@ -1268,9 +1318,13 @@ class App:
         for child in self.progress_blocks.winfo_children():
             child.destroy()
         # WIN: GREEN fill hero card with BG (black) text — the trophy block.
+        # Centrado (no hereda el anchor="w" de la ultima oracion) y borde reseteado
+        # al hairline (por si venimos del jefe con su borde amarillo de 2px).
         self.target.config(
-            text="🏆  ¡GANASTE!", bg=GREEN, fg=BG, font=(UI, 30, "bold")
+            text="🏆  ¡GANASTE!", bg=GREEN, fg=BG, font=(UI, 30, "bold"),
+            justify="center", anchor="center",
         )
+        _bordered(self.target, 1)
         self._score_badge("", BG, DIM)
         self._clear_units()
         self.feedback.config(

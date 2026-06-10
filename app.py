@@ -143,9 +143,6 @@ class Kind(str, Enum):
     WORD = "word"
 
 
-MULTIWORD = (Kind.SENTENCE, Kind.BOSS)  # objetivos de varias palabras
-
-
 @dataclass
 class Target:
     label: str  # lo que se muestra grande
@@ -165,6 +162,23 @@ class Target:
     @classmethod
     def word(cls, w: str) -> "Target":
         return cls(label=w, reference=w, kind=Kind.WORD)
+
+    # Comportamiento por tipo: el Target sabe como debe evaluarse y reconocerse,
+    # asi app.py no lo deduce con dispatch disperso (`kind in (...)`, `== BOSS`).
+    @property
+    def is_multiword(self) -> bool:
+        """Se evalua por palabra (oracion o jefe), no por fonema."""
+        return self.kind in (Kind.SENTENCE, Kind.BOSS)
+
+    @property
+    def long_form(self) -> bool:
+        """Tolera pausas largas entre palabras al reconocer (oracion/jefe)."""
+        return self.is_multiword
+
+    @property
+    def continuous(self) -> bool:
+        """Reconocimiento CONTINUO (sin tope de ~15s): el jefe = parrafo entero."""
+        return self.kind is Kind.BOSS
 
 
 class Game:
@@ -451,7 +465,7 @@ class App:
 
         has_errors = (
             self.game is not None
-            and self.game.current.kind in MULTIWORD
+            and self.game.current.is_multiword
             and bool(self._cur_errors())
         )
         items = []
@@ -556,7 +570,7 @@ class App:
         if self.game is None:
             self.incoming.config(text="")
             return
-        worst = self._worst_words() if self.game.current.kind in MULTIWORD else []
+        worst = self._worst_words() if self.game.current.is_multiword else []
         if worst:
             resumen = "  |  ".join(f"{w}×{c}" for w, c in worst[:8])
             self.incoming.config(
@@ -726,7 +740,7 @@ class App:
         if self.busy or self.game is None or self.state not in ("ready", "fail", "pass"):
             return
         multiword_idx = [
-            i for i, t in enumerate(self.game.targets) if t.kind in MULTIWORD
+            i for i, t in enumerate(self.game.targets) if t.is_multiword
         ]
         if forward:
             candidates = [i for i in multiword_idx if i > self.game.index]
@@ -789,7 +803,7 @@ class App:
                 self.game.index = idx
             self._enter_ready()  # al volver al origen, _enter_ready limpia
             return
-        if self.game.current.kind not in MULTIWORD:
+        if not self.game.current.is_multiword:
             return
         worst = [w for w, _s in self._worst_words()]
         if not worst:
@@ -867,9 +881,9 @@ class App:
         self.hint_keys.config(text="")  # durante la grabacion no hay teclas
         target = self.game.current.reference
         device = self.mic_device
-        long_form = self.game.current.kind in MULTIWORD  # tolera pausas largas
+        long_form = self.game.current.long_form  # tolera pausas largas (oracion/jefe)
         # El jefe (parrafo entero) usa reconocimiento CONTINUO (sin tope de ~15s).
-        continuous = self.game.current.kind == Kind.BOSS
+        continuous = self.game.current.continuous
 
         def on_status(code: str) -> None:
             # Corre en hilos del SDK: solo encolar, nunca tocar tkinter aca.
@@ -980,7 +994,7 @@ class App:
             return
 
         heard = f"escuché: “{a.recognized_text}”" if a.recognized_text else ""
-        is_multiword = self.game.current.kind in MULTIWORD  # oracion o parrafo
+        is_multiword = self.game.current.is_multiword  # oracion o parrafo
         threshold = self.config.pass_threshold
 
         # Desglose: por palabra (oracion/parrafo) o por fonema (palabra suelta).

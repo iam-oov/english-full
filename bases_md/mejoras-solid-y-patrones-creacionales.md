@@ -349,13 +349,14 @@ deja el juego funcionando:
 | 1 | ✅ hecho | `Kind` enum + named constructors de `Target` | OCP, Factory Method | Bajo | Alto |
 | 2 | ✅ hecho | Extraer `scoring.py` (`judge`) — regla de aprobado pura | SRP | Bajo | **Alto** (testeable) |
 | 3 | ✅ hecho | Definir `Protocol`s + inyectar `Scorer`/`Coach` en `App` | DIP | Medio | Alto |
-| 4 | ⬜ pendiente | Mover `long_form`/`continuous`/`is_multiword` a `Target` | OCP | Bajo | Medio |
+| 4 | ✅ hecho | Mover `long_form`/`continuous`/`is_multiword` a `Target` | OCP | Bajo | Medio |
 | 5 | ⬜ pendiente | (Opcional) separar puerto `AudioIO` de `Scorer` | ISP, SRP | Medio | Bajo |
 | 6 | ⬜ pendiente | (Cuando haya 2º motor) `build_scorer` factory | Factory | Bajo | Diferido |
 
-**Estado al 2026-06-10:** pasos #1, #2 y #3 implementados con tests (17 verdes).
+**Estado al 2026-06-10:** pasos #1–#4 implementados con tests (19 verdes).
 Se agregó `assessment.py` (DTOs sin Azure), `scoring.py` (`judge`), `ports.py`
-(puertos), y `tests/` con pytest. Quedan #4, #5, #6.
+(puertos), properties de comportamiento en `Target`, y `tests/` con pytest.
+Quedan #5 y #6.
 
 **Empezá por #2.** Es el de mejor relación retorno/riesgo: aísla la regla más
 importante y menos verificable del juego en una función pura que podés cubrir

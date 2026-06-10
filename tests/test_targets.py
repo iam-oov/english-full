@@ -28,6 +28,24 @@ def test_named_constructors_set_kind_and_text():
     assert w.label == "the"
 
 
+def test_recognition_behavior_lives_on_target():
+    # Cada tipo sabe como debe reconocerse, sin que app.py lo deduzca afuera.
+    s = Target.sentence("a b c")
+    assert s.is_multiword is True
+    assert s.long_form is True       # tolera pausas largas (varias palabras)
+    assert s.continuous is False     # recognize_once alcanza para una oracion
+
+    b = Target.boss("a. b.")
+    assert b.is_multiword is True
+    assert b.long_form is True
+    assert b.continuous is True      # parrafo entero -> reconocimiento continuo
+
+    w = Target.word("the")
+    assert w.is_multiword is False
+    assert w.long_form is False
+    assert w.continuous is False
+
+
 def test_single_sentence_has_no_boss():
     g = Game(["Just one sentence"])
     assert len(g.targets) == 1

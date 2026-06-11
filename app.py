@@ -28,6 +28,13 @@ import tkinter as tk
 from dataclasses import dataclass
 from enum import Enum
 
+import customtkinter as ctk
+
+# Tema oscuro global de CustomTkinter. Se setea al importar (no crea ningun root
+# Tk ni toca X11, asi que es seguro antes de _init_x11_threads); los tests que
+# importan `app` heredan el mismo modo.
+ctk.set_appearance_mode("dark")
+
 from assessment import Assessment
 from config import Config
 from ports import AudioIO, PronunciationCoach, PronunciationScorer
@@ -66,21 +73,28 @@ def _init_x11_threads() -> None:
         except OSError:
             continue
 
-# Paleta HashiCorp marketing (dark · monocroma + un acento azul).
-BG         = "#000000"   # canvas: negro puro (token canvas/primary)
-SURFACE1   = "#15181e"   # card lift (surface-1): target, entry, coach
-SURFACE2   = "#1f232b"   # secondary control (surface-2): mic, boton, hint
-HAIRLINE   = "#3b3d45"   # borde gris 1px (aprox. del hairline translucido)
-FG         = "#ffffff"   # ink: titulos / texto enfatizado
-INK_MUTED  = "#b2b6bd"   # ink-muted: body / instrucciones / ecos
-DIM        = "#656a76"   # ink-subtle: eyebrows, labels, hints (solo sobre BG)
-INK_SUBTLE = DIM         # alias del mismo token
-ACCENT     = "#2b89ff"   # accent-blue: titulo, foco del entry, estado activo
-GREEN      = "#00ca8e"   # semantic-success (Nomad): pass / derrotado
-RED        = "#e62b1e"   # semantic-error  (Consul): fail
-YELLOW     = "#ffcf25"   # semantic-warning (Vault): near-miss / procesando
-UI         = "TkDefaultFont"  # fuente del sistema (compacta; sin zoom)
-MONO       = "TkFixedFont"    # disponible pero SIN USO (HashiCorp: no mono)
+# Paleta del rediseño (CustomTkinter · dark azulado con acento azul y esquinas
+# redondeadas). Reemplaza la paleta HashiCorp monocroma.
+BG           = "#0f1117"  # canvas de la ventana: gris oscuro suave (no negro puro)
+SURFACE1     = "#1a1d27"  # cards / textbox / superficies elevadas
+SURFACE2     = "#232733"  # chips, pills, controles secundarios
+BORDER       = "#2e3340"  # borde sutil de cards y controles
+HAIRLINE     = BORDER     # alias retro-compat (el codigo viejo usaba HAIRLINE)
+FG           = "#f2f4f8"  # ink: titulos / texto principal
+INK_MUTED    = "#9aa1ac"  # body / instrucciones / ecos
+DIM          = "#646b78"  # chrome tenue: counters, hints, labels
+INK_SUBTLE   = DIM        # alias del mismo token
+ACCENT       = "#3d7dff"  # azul: acento de card, segmentos hechos, foco, CTA
+ACCENT_HOVER = "#5a90ff"  # hover del acento
+GREEN        = "#22c55e"  # semantic pass / derrotado
+GREEN_DIM    = "#16321f"  # fill oscuro del tile verde
+RED          = "#ef4444"  # semantic fail
+RED_DIM      = "#2c1719"  # fill oscuro del tile rojo
+AMBER        = "#e8920c"  # warning / jefe (segmento naranja, banner near-miss)
+AMBER_DIM    = "#241c10"  # fill oscuro del banner ambar
+YELLOW       = AMBER      # alias retro-compat (el codigo viejo usaba YELLOW)
+UI           = "TkDefaultFont"  # familia base; los widgets ctk aceptan tuplas (UI, n)
+MONO         = "TkFixedFont"
 
 
 def _bordered(w, thick=1):
@@ -288,239 +302,169 @@ class App:
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
         self.root.title("Pronunciation Tetris")
-        self.root.configure(bg=BG)
-        self.root.geometry("880x760")
-        self.root.minsize(700, 560)
+        self.root.configure(fg_color=BG)
+        self.root.geometry("900x780")
+        self.root.minsize(720, 580)
 
         # Barra de destello arriba: pulsa verde al ganar / rojo al fallar.
-        self.flash_bar = tk.Frame(self.root, bg=BG, height=6)
+        # corner_radius=0 -> rectangulo neto pegado al borde superior.
+        self.flash_bar = ctk.CTkFrame(
+            self.root, height=4, corner_radius=0, fg_color=BG
+        )
         self.flash_bar.pack(side="top", fill="x")
 
         # Indicador de OBJETIVO (config, no feedback): arriba-izquierda, chico y
         # tenue. Te recuerda visualmente el umbral por sonido. Va con .place (capa
         # propia sobre root); como la columna `content` se crea despues y es alta,
-        # la solaparia con su fondo negro -> al final de _build_ui la subimos con
-        # .lift() para que quede ENCIMA y se lea entera.
-        self.goal_label = tk.Label(
+        # la solaparia -> al final de _build_ui la subimos con .lift().
+        self.goal_label = ctk.CTkLabel(
             self.root,
             text=f"🎯 objetivo: {self.config.pass_threshold:.0f}% por sonido",
-            bg=BG, fg=DIM, font=(UI, 9),
+            text_color=DIM, font=(UI, 11),
         )
-        self.goal_label.place(x=12, y=12)
+        self.goal_label.place(x=16, y=12)
 
-        # Columna central de ancho fijo: agrupa el contenido y lo centra como un
-        # bloque, para que en pantallas anchas (ultrawide) NO quede flotando en una
-        # franja con enormes vacios negros a los costados. Reemplaza el layout que
-        # colgaba cada widget directo de root. flash_bar (arriba) y los hints (abajo)
-        # siguen en root; todo lo del medio vive en este contenedor.
-        self.content = tk.Frame(self.root, bg=BG)
+        # Fila de pills (hints) al pie: se reconstruye en _refresh_hints.
+        self.hints_row = ctk.CTkFrame(self.root, fg_color="transparent")
+        self.hints_row.pack(side="bottom", pady=(0, 14))
+
+        # Columna central: agrupa el contenido y lo centra como un bloque, para que
+        # en pantallas anchas NO quede flotando con enormes vacios a los costados.
+        # flash_bar (arriba) y hints_row (abajo) viven en root; todo lo del medio
+        # vive en este contenedor transparente.
+        self.content = ctk.CTkFrame(self.root, fg_color="transparent")
         self.content.pack(expand=True)
 
-        self.progress = tk.Label(
-            self.content, text="", bg=BG, fg=DIM, font=(UI, 10)
-        )
-        self.progress.pack(pady=(8, 0))
+        # Barra tipo Tetris: un segmento por objetivo (derrotado / actual /
+        # pendiente / jefe). El progreso de un vistazo. Se reconstruye en
+        # _render_progress_blocks.
+        self.progress_blocks = ctk.CTkFrame(self.content, fg_color="transparent")
+        self.progress_blocks.pack(pady=(4, 10))
 
-        # Eyebrow: etiqueta de categoria en mayusculas (la firma HashiCorp mas
-        # portable). Marca toda la app como una "zona"; vive sobre la card target.
-        self.eyebrow = tk.Label(
-            self.content, text="PRONUNCIATION TRAINER", bg=BG, fg=DIM,
-            font=(UI, 9, "bold"),
+        # Contador "Oración 3 de 8".
+        self.progress = ctk.CTkLabel(
+            self.content, text="", text_color=DIM, font=(UI, 12)
         )
+        self.progress.pack(pady=(0, 8))
 
-        # Barra tipo Tetris: un bloque por objetivo (derrotado / actual / pendiente
-        # / jefe). El progreso de un vistazo.
-        self.progress_blocks = tk.Frame(self.content, bg=BG)
-        self.progress_blocks.pack(pady=(8, 0))
+        # Card de lectura: SURFACE1 redondeada con borde sutil y una barra de acento
+        # a la izquierda. El texto se lee como contenido, no como alerta.
+        self.target_card = ctk.CTkFrame(
+            self.content, fg_color=SURFACE1, corner_radius=14,
+            border_width=1, border_color=BORDER, width=540,
+        )
+        self.target_card.pack(pady=(0, 10), fill="x")
+        # Barra de acento vertical pegada al borde izquierdo de la card.
+        self.target_accent = ctk.CTkFrame(
+            self.target_card, width=4, corner_radius=2, fg_color=ACCENT
+        )
+        self.target_accent.place(relx=0.0, rely=0.5, anchor="w", x=14, relheight=0.62)
+        self.target = ctk.CTkLabel(
+            self.target_card, text="", text_color=FG, font=(UI, 16, "bold"),
+            wraplength=470, justify="left", anchor="w",
+        )
+        self.target.pack(padx=(34, 24), pady=24, fill="x")
 
-        # Barra de "HP"/dominio del objetivo actual: se LLENA con tu mejor accuracy
-        # (vacia = sin dominar, full verde = derrotado). Ancho fijo + pack_propagate
-        # False para que el fill por `place` (relwidth) sea estable. Se packea/oculta
-        # dinamicamente en _render_hp_bar (solo para oracion/jefe, no en input/win).
-        self.hp_wrap = tk.Frame(
-            self.content, bg=SURFACE2, width=300, height=10,
-            highlightthickness=1, highlightbackground=HAIRLINE,
+        # Barra de "HP"/dominio del objetivo actual: se LLENA con tu mejor accuracy.
+        # Se packea/oculta dinamicamente en _render_hp_bar (solo oracion/jefe).
+        self.hp_bar = ctk.CTkProgressBar(
+            self.content, width=300, height=6, corner_radius=3,
+            fg_color=SURFACE2, progress_color=GREEN,
         )
-        self.hp_wrap.pack_propagate(False)
-        self.hp_fill = tk.Frame(self.hp_wrap, bg=GREEN)
-        self.hp_fill.place(relx=0, rely=0, relwidth=0.0, relheight=1)
+        self.hp_bar.set(0)
 
-        # Status line: usa justify="left" para que la lista numerada "A practicar"
-        # (multi-linea) se lea como lista; en los textos de una linea no cambia nada.
-        self.incoming = tk.Label(
-            self.content,
-            text="",
-            bg=BG,
-            fg=INK_MUTED,
-            font=(UI, 11),
-            wraplength=540,
-            justify="left",
+        # Status line: justify="left" para que la lista numerada "A practicar"
+        # (multi-linea) se lea como lista; en textos de una linea no cambia nada.
+        self.incoming = ctk.CTkLabel(
+            self.content, text="", text_color=INK_MUTED, font=(UI, 12),
+            wraplength=520, justify="left",
         )
-        self.incoming.pack(pady=(8, 0))
+        self.incoming.pack(pady=(0, 4))
 
-        # Eyebrow encima de la card target (pack apenas antes que el target).
-        self.eyebrow.pack(pady=(8, 0))
+        # Banner de resultado: card cuyo color/borde lo define _style_result segun
+        # el veredicto (idle/pass/fail). Adentro: el score grande + el feedback.
+        self.result_card = ctk.CTkFrame(
+            self.content, fg_color="transparent", corner_radius=10
+        )
+        self.result_card.pack(pady=(0, 4), fill="x")
+        self.score = ctk.CTkLabel(
+            self.result_card, text="", font=(UI, 15, "bold"), text_color=FG
+        )
+        self.score.pack(pady=(8, 2), padx=14)
+        self.feedback = ctk.CTkLabel(
+            self.result_card, text="", text_color=INK_MUTED, font=(UI, 12),
+            wraplength=500, justify="left",
+        )
+        self.feedback.pack(pady=(0, 8), padx=14)
 
-        # Card de lectura: SURFACE1 con harto aire (ipady) y texto a la izquierda en
-        # textos largos -> se lee como contenido, no como una alerta. El "peligro"
-        # del jefe NO va con fill amarillo full (eso gritaba ERROR): va por la barra
-        # de HP + un badge chico (Slice 3). Sin expand: la columna queda compacta y
-        # centrada como bloque (lo centra `content`, no este widget).
-        self.target = tk.Label(
-            self.content,
-            text="",
-            bg=SURFACE1,
-            fg=FG,
-            font=(UI, 28, "bold"),
-            wraplength=540,
+        # Chrome de la corrida: racha + combo, chiquito y tenue.
+        self.run_chrome = ctk.CTkLabel(
+            self.content, text="", text_color=DIM, font=(UI, 11)
         )
-        # HashiCorp = surface-lift, NO shadow: el hairline gris 1px + el escalon
-        # charcoal (BG -> SURFACE1) bastan para delimitar la card. Sin offset frame.
-        _bordered(self.target, 1)
-        # ipadx/ipady must go on pack(), not .config(), for tk.Label.
-        # fill="x" -> la card abarca el ancho de la columna y se lee como tarjeta
-        # (no como un bloque de texto flotando). El alto NO se expande (sin expand).
-        self.target.pack(pady=(8, 0), ipadx=24, ipady=20, fill="x")
-
-        # Header de jugador (solo pantalla inicial): "Level N · Accuracy X%" leido de
-        # la progresion persistida. Se packea en _show_input (antes del paste box) y
-        # se oculta al empezar, igual que entry/mic_row.
-        self.start_stats = tk.Label(
-            self.content, text="", bg=BG, fg=INK_MUTED, font=(UI, 12, "bold"),
-        )
-
-        # Cuadro multi-linea para PEGAR un parrafo (Enter = salto de linea;
-        # Shift+Enter = empezar).
-        self.entry = tk.Text(
-            self.content, font=(UI, 11), width=60, height=5,
-            bg=SURFACE1, fg=FG, insertbackground=FG, relief="flat",
-            wrap="word", padx=10, pady=8,
-        )
-        # Focus ring fiel al de HashiCorp: el borde se pone ACCENT azul cuando el
-        # campo tiene foco de teclado (highlightcolor) y vuelve al hairline gris al
-        # perderlo (highlightbackground). Feature nativa de tk, sin binding extra.
-        self.entry.config(
-            relief="flat", highlightthickness=1,
-            highlightcolor=ACCENT, highlightbackground=HAIRLINE,
-        )
-        self.entry.pack()
-
-        # Selector de microfono (solo visible en la pantalla inicial).
-        self.mic_row = tk.Frame(self.content, bg=BG)
-        tk.Label(
-            self.mic_row, text="🎙 Micrófono:", bg=BG, fg=DIM,
-            font=(UI, 10),
-        ).pack(side="left", padx=(0, 6))
-        self._mic_options = self._list_microphones()
-        self.mic_var = tk.StringVar(value=self._mic_options[0][0])
-        self.mic_menu = tk.OptionMenu(
-            self.mic_row, self.mic_var, *[label for label, _dev in self._mic_options]
-        )
-        # Control secundario (surface-2 + hairline): monocromo, sin fill de color.
-        self.mic_menu.config(
-            bg=SURFACE2, fg=FG, activebackground=SURFACE1, activeforeground=FG,
-            relief="flat", font=(UI, 10, "bold"),
-        )
-        _bordered(self.mic_menu, 1)
-        self.mic_menu["menu"].config(
-            bg=SURFACE2, fg=FG, activebackground=SURFACE1, activeforeground=FG,
-        )
-        self.mic_menu.pack(side="left")
-        # Boton secundario HashiCorp = surface-2 charcoal + hairline + ink (NO
-        # fill amarillo): el unico color vivo se reserva para titulo/foco/activo.
-        self.mic_test_btn = tk.Button(
-            self.mic_row,
-            text="🎧 Probar (Ctrl+T)",
-            command=self._on_mic_test,
-            bg=SURFACE2, fg=FG, activebackground=SURFACE1, activeforeground=FG,
-            relief="flat", bd=0, padx=10, font=(UI, 10, "bold"), cursor="hand2",
-        )
-        _bordered(self.mic_test_btn, 1)
-        # ipady is a geometry manager option, not a widget option
-        self.mic_test_btn.pack(side="left", padx=(8, 0), ipady=2)
-
-        # Badge de score: texto sin borde (idle) -> chip con fill semantico +
-        # hairline al mostrar estado. Fuente UI (HashiCorp: no mono).
-        self.score = tk.Label(
-            self.content, text="", bg=BG, fg=DIM, font=(UI, 15, "bold"),
-        )
-        # ipadx/ipady are geometry manager options, not widget config options
-        self.score.pack(pady=(8, 0), ipadx=10, ipady=4)
-
-        # Chrome de la corrida: racha + combo, chiquito y tenue bajo el badge.
-        self.run_chrome = tk.Label(self.content, text="", bg=BG, fg=DIM, font=(UI, 10))
-        self.run_chrome.pack(pady=(4, 0))
+        self.run_chrome.pack(pady=(2, 0))
         # Flash de XP: aparece breve (+40 XP) al derrotar un objetivo nuevo.
-        self.xp_flash = tk.Label(
-            self.content, text="", bg=BG, fg=GREEN, font=(UI, 11, "bold"),
+        self.xp_flash = ctk.CTkLabel(
+            self.content, text="", text_color=GREEN, font=(UI, 12, "bold")
         )
-        self.xp_flash.pack(pady=(2, 0))
+        self.xp_flash.pack(pady=(0, 0))
 
-        # Desglose por fonema (palabra) o por palabra (jefe): cada unidad se
-        # pinta segun su score. Aca el usuario VE donde estuvo el problema.
-        # Vive en `content` (NO en root) para quedar dentro de la columna central.
-        self.units = tk.Frame(self.content, bg=BG)
+        # Desglose por fonema (palabra) o por palabra (jefe): un tile por unidad.
+        self.units = ctk.CTkFrame(self.content, fg_color="transparent")
         self.units.pack(pady=(8, 0))
 
-        # Body relajado: INK_MUTED por defecto (HashiCorp: body es el gris muteado,
-        # los titulos/enfasis son blanco/acento). El color de estado lo lleva el badge.
-        # wraplength = ancho de columna (540), igual que target/incoming.
-        self.feedback = tk.Label(
-            self.content,
-            text="",
-            bg=BG,
-            fg=INK_MUTED,
-            font=(UI, 11),
-            wraplength=540,
+        # Consejo del LLM (DeepSeek): debajo de la pista estatica. Idle = texto DIM;
+        # al mostrarse, _coach_show lo eleva a card.
+        self.coach_tip = ctk.CTkLabel(
+            self.content, text="", text_color=DIM, font=(UI, 12, "bold"),
+            wraplength=500, justify="center",
         )
-        self.feedback.pack(pady=(8, 0))
+        self.coach_tip.pack(pady=(8, 0))
 
-        # Consejo del LLM (DeepSeek): card surface-1 tranquila debajo de la pista
-        # estatica. Idle = texto DIM sin recuadro; al mostrarse, surface-1 + hairline.
-        self.coach_tip = tk.Label(
-            self.content,
-            text="",
-            bg=BG,
-            fg=DIM,
-            font=(UI, 12, "bold"),
-            wraplength=540,
-            justify="center",
+        # CTA PRINCIPAL: boton redondeado (pill). Click = misma accion que ESPACIO
+        # via _on_primary (que despacha _on_start / _on_space segun el estado).
+        self.hint = ctk.CTkButton(
+            self.content, text="", command=self._on_primary,
+            font=(UI, 14, "bold"), height=46, corner_radius=23,
+            fg_color="transparent", border_width=1, border_color=BORDER,
+            hover_color=SURFACE2, text_color=FG,
         )
-        self.coach_tip.pack(pady=(8, 0), ipadx=12, ipady=8)
+        self.hint.pack(pady=(14, 0))
 
-        # Barra inferior, TRES renglones. Se packea de abajo hacia arriba:
-        # sistema (lo mas abajo), luego las teclas, luego ESPACIO arriba.
-        # Renglon 3: comandos de sistema (siempre), bien tenue.
-        self.hint_sys = tk.Label(
-            self.root,
-            text=f"{self._k('font_up')}/{self._k('font_down')}: fuente"
-            "   ·   Ctrl+R: reset   ·   ESC: salir",
-            bg=BG, fg=DIM, font=(UI, 9),
+        # --- widgets SOLO de la pantalla inicial (se crean aca, se packean en
+        # _show_input y se ocultan en _begin_game) ---
+        self.start_stats = ctk.CTkLabel(
+            self.content, text="", text_color=INK_MUTED, font=(UI, 13, "bold")
         )
-        self.hint_sys.pack(side="bottom", pady=(0, 8))
-
-        # Renglon 2: teclas de accion (X · A · S · D · F · R), tenue.
-        self.hint_keys = tk.Label(
-            self.root, text="", bg=BG, fg=DIM, font=(UI, 10),
-            wraplength=850, justify="center",
+        # Cuadro multi-linea para PEGAR un parrafo (Enter = salto de linea;
+        # Shift+Enter = empezar).
+        self.entry = ctk.CTkTextbox(
+            self.content, width=480, height=120, corner_radius=12,
+            fg_color=SURFACE1, border_width=1, border_color=BORDER,
+            font=(UI, 13), wrap="word",
         )
-        self.hint_keys.pack(side="bottom", pady=(0, 4))
-
-        # ACCION PRINCIPAL: el chip de ESPACIO deja de ser un renglon chiquito al
-        # pie y pasa a ser un BOTON GIGANTE dentro de la columna central -> imposible
-        # de ignorar (jerarquia nivel 3). fill="x" lo hace abarcar toda la columna;
-        # ipady alto le da cuerpo de boton. Sigue monocromo (surface-2 + hairline):
-        # HashiCorp reserva el acento azul para titulo/foco/activo, no para CTAs.
-        # Click del mouse = misma accion que la tecla ESPACIO (aditivo; _on_space ya
-        # ignora el click en estado 'input'/'busy').
-        self.hint = tk.Label(
-            self.content, text="", bg=SURFACE2, fg=FG, font=(UI, 14, "bold"),
-            wraplength=520, justify="center", cursor="hand2",
+        # Selector de microfono (solo visible en la pantalla inicial).
+        self.mic_row = ctk.CTkFrame(self.content, fg_color="transparent")
+        ctk.CTkLabel(
+            self.mic_row, text="🎙", text_color=DIM, font=(UI, 13)
+        ).pack(side="left")
+        self._mic_options = self._list_microphones()
+        self.mic_var = tk.StringVar(value=self._mic_options[0][0])
+        self.mic_menu = ctk.CTkOptionMenu(
+            self.mic_row, variable=self.mic_var,
+            values=[label for label, _dev in self._mic_options],
+            font=(UI, 12), corner_radius=8,
+            fg_color=SURFACE2, button_color=SURFACE2, button_hover_color=BORDER,
+            text_color=FG, dropdown_fg_color=SURFACE1,
+            dropdown_hover_color=SURFACE2, dropdown_text_color=FG, width=260,
         )
-        _bordered(self.hint, 1)
-        self.hint.bind("<Button-1>", self._on_space)
-        # ipadx/ipady are geometry manager options, not widget config options
-        self.hint.pack(pady=(16, 0), ipadx=24, ipady=12, fill="x")
+        self.mic_menu.pack(side="left", padx=(8, 0))
+        self.mic_test_btn = ctk.CTkButton(
+            self.mic_row, text="🎧 Probar", command=self._on_mic_test,
+            font=(UI, 12, "bold"), corner_radius=8, width=90, height=28,
+            fg_color="transparent", border_width=1, border_color=BORDER,
+            hover_color=SURFACE2, text_color=FG,
+        )
+        self.mic_test_btn.pack(side="left", padx=(8, 0))
 
         # La etiqueta de objetivo (.place sobre root) tiene que quedar ENCIMA de la
         # columna `content` (que se creo despues y la solapa). lift() la sube al tope.
@@ -587,60 +531,95 @@ class App:
         """La tecla (en mayuscula, para mostrar) de una accion del dict KEYS."""
         return KEYS[action].upper()
 
-    def _keys_line(self) -> str:
-        """Renglon 2 de la barra: teclas de accion segun el estado/objetivo."""
+    def _on_primary(self, _event=None) -> None:
+        """Despachador del CTA: en 'input' empieza el juego; si no, replica ESPACIO.
+
+        El boton no puede llamar a _on_space y _on_start a la vez, asi que este
+        wrapper decide segun el estado (igual que hacian el viejo click + ESPACIO).
+        """
+        if self.state == "input":
+            self._on_start()
+        else:
+            self._on_space()
+
+    def _keys_line(self) -> list[tuple[str, str]]:
+        """Pills de accion segun el estado/objetivo: lista de (tecla, etiqueta)."""
         # Drilleando una palabra: solo audio + salir de practica + navegar.
         if self.game is not None and self.game.current.kind == Kind.WORD:
-            items = [f"{self._k('retry')}: reintentar", f"{self._k('mine')}: tu voz",
-                     f"{self._k('correct')}: la correcta"]
+            items = [
+                (self._k("retry"), "reintentar"),
+                (self._k("mine"), "tu voz"),
+                (self._k("correct"), "la correcta"),
+            ]
             if self._practice_origin is not None:
-                items.append(f"{self._k('practice')}: salir de práctica")
-            items.append(f"{self._k('prev')}/{self._k('next')}: ◀ ▶ navegar")
-            return "   ·   ".join(items)
+                items.append((self._k("practice"), "salir de práctica"))
+            items.append((f"{self._k('prev')}/{self._k('next')}", "◀ ▶ navegar"))
+            return items
 
         has_errors = (
             self.game is not None
             and self.game.current.is_multiword
             and bool(self._cur_errors())
         )
-        items = []
+        items: list[tuple[str, str]] = []
         # A es toggle: 'ir al jefe' desde una oracion, 'volver' desde el jefe.
         if self.game is not None and self._boss_index() is not None:
             if self.game.current.kind == Kind.BOSS:
-                items.append(f"{self._k('boss')}: volver")
+                items.append((self._k("boss"), "volver"))
             else:
-                items.append(f"{self._k('boss')}: ir al jefe")
-        items.append(f"{self._k('retry')}: reintentar")
-        items.append(f"{self._k('mine')}: tu voz")
-        items.append(f"{self._k('correct')}: la correcta")
+                items.append((self._k("boss"), "ir al jefe"))
+        items.append((self._k("retry"), "reintentar"))
+        items.append((self._k("mine"), "tu voz"))
+        items.append((self._k("correct"), "la correcta"))
         if has_errors:
-            items.append(f"{self._k('practice')}: practicar")
-            items.append(f"{self._k('clear')}: limpiar práctica")
-        items.append(f"{self._k('prev')}/{self._k('next')}: ◀ ▶ navegar")
-        return "   ·   ".join(items)
+            items.append((self._k("practice"), "practicar"))
+            items.append((self._k("clear"), "limpiar práctica"))
+        items.append((f"{self._k('prev')}/{self._k('next')}", "◀ ▶ navegar"))
+        return items
+
+    def _clear_hints_row(self) -> None:
+        for child in self.hints_row.winfo_children():
+            child.destroy()
 
     def _refresh_hints(self) -> None:
-        """Dibuja la barra inferior: ESPACIO (verde, renglon 1) + teclas (renglon 2)."""
-        # (Ctrl+R / ESC viven siempre en hint_sys, renglon de sistema.)
+        """Actualiza el CTA principal + redibuja las pills de la barra inferior."""
+        # 1) Texto del CTA segun el estado.
         if self.state == "input":
-            self.hint.config(text="Shift+Enter: empezar")
-            self.hint_keys.config(text="Ctrl+T: probar micrófono")
-            return
-        if self.state == "win":
-            self.hint.config(text="ESPACIO: jugar otro párrafo")
-            self.hint_keys.config(text="")
-            return
-        # En juego (ready / fail / pass): ESPACIO cambia segun el momento.
-        kind = self.game.current.kind if self.game else Kind.WORD
-        if self.state == "pass":
-            space = "ESPACIO: siguiente"
+            self.hint.configure(text="▷  Empezar")
+        elif self.state == "win":
+            self.hint.configure(text="↻  Otra vez")
+        elif self.state == "recording":
+            self.hint.configure(text="🎙 Escuchando…")
+        elif self.state == "pass":
+            self.hint.configure(text="➡  Siguiente")
         elif self.state == "fail":
-            space = "ESPACIO: reintentar"
+            self.hint.configure(text="🎤  Reintentar")
         else:  # ready
-            verbo = {Kind.BOSS: "el párrafo", Kind.SENTENCE: "la oración"}.get(kind, "la palabra")
-            space = f"ESPACIO: grabá {verbo}"
-        self.hint.config(text=space)
-        self.hint_keys.config(text=self._keys_line())
+            self.hint.configure(text="🎤  Hablar ahora")
+
+        # 2) Pills: las de accion (segun estado/objetivo) + las de sistema (fijas).
+        self._clear_hints_row()
+        # Durante la grabacion no ofrecemos teclas de accion (no aplican).
+        if self.state in ("input", "win", "recording"):
+            action_pills: list[tuple[str, str]] = []
+        else:
+            action_pills = self._keys_line()
+        system_pills = [
+            (f"{self._k('font_up')}/{self._k('font_down')}", "fuente"),
+            ("Ctrl+R", "reset"),
+            ("Esc", "salir"),
+        ]
+        for key, label in action_pills + system_pills:
+            pill = ctk.CTkFrame(self.hints_row, fg_color=SURFACE2, corner_radius=8)
+            pill.pack(side="left", padx=4)
+            ctk.CTkLabel(
+                pill, text=key, text_color=FG, font=(UI, 10, "bold"),
+                fg_color="transparent",
+            ).pack(side="left", padx=(8, 4), pady=4)
+            ctk.CTkLabel(
+                pill, text=label, text_color=DIM, font=(UI, 10),
+                fg_color="transparent",
+            ).pack(side="left", padx=(0, 8))
 
     # ----------------------------------------------------------- pantallas
     def _show_input(self) -> None:
@@ -650,33 +629,39 @@ class App:
         # tests que construyen un App no escriban a disco).
         if self.stats is None:
             self.stats = self.store.load()
-        self.progress.config(text="")
-        self.incoming.config(text="")
+        self.progress.configure(text="")
+        self.incoming.configure(text="")
         self._render_progress_blocks()  # game es None -> limpia los bloques
         self._render_hp_bar()  # game es None -> oculta la barra de HP
-        self.run_chrome.config(text="")  # sin racha/combo en la pantalla inicial
-        self.xp_flash.config(text="")
+        self.run_chrome.configure(text="")  # sin racha/combo en la pantalla inicial
+        self.xp_flash.configure(text="")
         self._render_start_stats()  # "Level N · Accuracy X%"
-        # Titulo: centrado (hero), y reseteo del borde por si venimos de un jefe
-        # (que deja el borde amarillo de 2px).
-        self.target.config(
-            text="Pronunciation Tetris", bg=SURFACE1, fg=ACCENT,
+        # Titulo: centrado (hero), card en su estado neutro (acento azul) por si
+        # venimos de un jefe (que deja borde ambar de 2px).
+        self.target_card.configure(
+            fg_color=SURFACE1, border_color=BORDER, border_width=1
+        )
+        self.target_accent.configure(fg_color=ACCENT)
+        self.target.configure(
+            text="Pronunciation Tetris", text_color=ACCENT,
             font=(UI, 28, "bold"), justify="center", anchor="center",
         )
-        _bordered(self.target, 1)
-        self._score_badge("", BG, DIM)
+        self._score_badge("", DIM)
+        self._style_result("idle")
         self._clear_units()
         self._coach_clear()
-        self.feedback.config(
+        self.feedback.configure(
             text="Pegá un párrafo (oraciones separadas por “.” o saltos de línea) "
             "y apretá Shift+Enter.",
-            fg=INK_MUTED,
+            text_color=INK_MUTED,
         )
         self._refresh_hints()
         self.entry.delete("1.0", "end")
-        self.entry.pack(before=self.score)  # mantiene su lugar tras un reset
-        self.mic_row.pack(before=self.score, pady=(8, 0))  # elegir mic acá
-        self.start_stats.pack(before=self.entry, pady=(0, 4))  # header arriba del paste
+        # Orden de la pantalla inicial: card(titulo) -> start_stats -> entry ->
+        # mic_row -> CTA. Los packeamos ANTES del CTA (self.hint).
+        self.start_stats.pack(before=self.hint, pady=(0, 6))
+        self.entry.pack(before=self.hint, pady=(0, 8))
+        self.mic_row.pack(before=self.hint, pady=(0, 8))
         self.entry.focus_set()
 
     def _reset(self, _event=None) -> None:
@@ -701,43 +686,51 @@ class App:
             Kind.WORD: "Cola de práctica", Kind.SENTENCE: "Oración",
             Kind.BOSS: "👑 JEFE FINAL",
         }.get(t.kind, "Objetivo")
-        self.progress.config(text=f"{kind_label}   ·   {self.game.index + 1} / {n}")
+        self.progress.configure(text=f"{kind_label}   ·   {self.game.index + 1} / {n}")
         self._render_progress_blocks()
         self._render_status_line()  # palabras a mejorar / proxima, bajo la barra
         self._render_hp_bar()  # barra de dominio del objetivo actual
         self._render_run_chrome()  # racha / combo
 
         # Tamaño segun largo: el parrafo (jefe) chico, oracion mediana, palabra
-        # grande. El jefe ademas baja a 15 si es MUY largo (>220 chars).
-        # Card de LECTURA: oracion/jefe a la izquierda (se lee como contenido, no
-        # como banner centrado); palabra suelta centrada (es corta).
-        # El "peligro" del jefe va por BORDE amarillo (2px), NO por fill amarillo
-        # full: el fill gritaba ERROR/alerta. SENTENCE/WORD vuelven al hairline 1px.
+        # grande (ver _target_font_size). Card de LECTURA: oracion/jefe a la
+        # izquierda (se lee como contenido), palabra suelta centrada (es corta).
+        # El "peligro" del jefe va por BORDE ambar (2px) + acento ambar, NO por
+        # fill ambar full (gritaba ERROR). SENTENCE/WORD vuelven al borde sutil.
         size = self._target_font_size(t)  # incluye el zoom P/L (self._font_delta)
         if t.kind == Kind.BOSS:
-            self.target.config(
-                text=t.label, bg=SURFACE1, fg=FG, font=(UI, size, "bold"),
+            self.target_card.configure(
+                fg_color=SURFACE1, border_color=AMBER, border_width=2
+            )
+            self.target_accent.configure(fg_color=AMBER)
+            self.target.configure(
+                text=t.label, text_color=FG, font=(UI, size, "bold"),
                 justify="left", anchor="w",
-                highlightthickness=2, highlightbackground=YELLOW,
             )
         elif t.kind == Kind.SENTENCE:
-            self.target.config(
-                text=t.label, bg=SURFACE1, fg=FG, font=(UI, size, "bold"),
+            self.target_card.configure(
+                fg_color=SURFACE1, border_color=BORDER, border_width=1
+            )
+            self.target_accent.configure(fg_color=ACCENT)
+            self.target.configure(
+                text=t.label, text_color=FG, font=(UI, size, "bold"),
                 justify="left", anchor="w",
             )
-            _bordered(self.target, 1)
-        else:  # word (practica): una sola palabra -> centrada
-            self.target.config(
-                text=t.label, bg=SURFACE1, fg=ACCENT, font=(UI, size, "bold"),
+        else:  # word (practica): una sola palabra -> centrada, en acento
+            self.target_card.configure(
+                fg_color=SURFACE1, border_color=BORDER, border_width=1
+            )
+            self.target_accent.configure(fg_color=ACCENT)
+            self.target.configure(
+                text=t.label, text_color=ACCENT, font=(UI, size, "bold"),
                 justify="center", anchor="center",
             )
-            _bordered(self.target, 1)
 
     def _render_status_line(self) -> None:
         """Renglon bajo la barra de progreso: las palabras A MEJORAR del objetivo
         actual (persisten tras calificar), o la próxima si no hay errores."""
         if self.game is None:
-            self.incoming.config(text="")
+            self.incoming.configure(text="")
             return
         worst = self._worst_words() if self.game.current.is_multiword else []
         if worst:
@@ -746,72 +739,106 @@ class App:
             # lee como lista de tareas, no como metricas sueltas.
             if self.game.current.kind == Kind.BOSS:
                 resumen = "  |  ".join(f"{w}×{c}" for w, c in worst[:8])
-                self.incoming.config(text=f"Puntos débiles:  {resumen}", fg=INK_MUTED)
+                self.incoming.configure(
+                    text=f"Puntos débiles:  {resumen}", text_color=INK_MUTED
+                )
             else:
                 lines = "\n".join(
                     f"  {i}. {w}  ×{c}" for i, (w, c) in enumerate(worst[:6], 1)
                 )
-                self.incoming.config(
-                    text=f"A practicar ({self._k('practice')}):\n{lines}", fg=INK_MUTED,
+                self.incoming.configure(
+                    text=f"A practicar ({self._k('practice')}):\n{lines}",
+                    text_color=INK_MUTED,
                 )
             return
         upcoming = self.game.targets[self.game.index + 1 :]
         nxt = upcoming[0] if upcoming else None
         if nxt is None:
-            self.incoming.config(text="¡Último objetivo!", fg=DIM)
+            self.incoming.configure(text="¡Último objetivo!", text_color=DIM)
         elif nxt.kind == Kind.BOSS:
-            self.incoming.config(text="Próxima:  👑 EL JEFE (todo el párrafo)", fg=DIM)
+            self.incoming.configure(
+                text="Próxima:  👑 EL JEFE (todo el párrafo)", text_color=DIM
+            )
         elif nxt.kind == Kind.WORD:
-            self.incoming.config(text=f"Próxima:  {nxt.label}", fg=DIM)
+            self.incoming.configure(text=f"Próxima:  {nxt.label}", text_color=DIM)
         else:
-            self.incoming.config(text="")  # próxima oración: sin label redundante
+            self.incoming.configure(text="")  # próxima oración: sin label redundante
 
     def _render_progress_blocks(self) -> None:
-        """Barra tipo Tetris: un bloque por objetivo. Color por ESTADO real:
-        VERDE = derrotado, ROJO = intentado sin derrotar, GRIS = no intentado.
-        El objetivo ACTUAL se marca con ▶ (el jefe siempre con ♛)."""
+        """Barra tipo Tetris: un segmento por objetivo. Color por ESTADO real:
+        AZUL = derrotado, ROJO = intentado sin derrotar, GRIS = no intentado.
+        El objetivo ACTUAL es mas alto (lee como "en progreso"); el jefe es ambar
+        y lleva una coronita al lado."""
         for child in self.progress_blocks.winfo_children():
             child.destroy()
         if self.game is None:
+            self.progress_blocks.pack_forget()  # vacio: no dejar el hueco de 200x200
             return
+        self.progress_blocks.pack(before=self.progress, pady=(4, 10))
+        n = len(self.game.targets)
+        # Ancho por segmento: escala para que la fila entre en ~480px.
+        seg_w = max(16, 480 // max(n, 1))
         for i, target in enumerate(self.game.targets):
             status = self._status.get(id(target))
-            # Color is the FILL of the chip, not text fg. Pendiente = surface-2.
-            bg_fill = {"defeated": GREEN, "failed": RED}.get(status, SURFACE2)
-            fg_text = BG if status in ("defeated", "failed") else INK_MUTED
+            # defeated -> ACCENT (azul = hecho); failed -> RED; pendiente -> SURFACE2.
+            color = {"defeated": ACCENT, "failed": RED}.get(status, SURFACE2)
+            is_current = i == self.game.index
+            # El objetivo actual aun no intentado se resalta con ACCENT_HOVER;
+            # si ya tiene estado, conserva su color. Mas alto = "en progreso".
+            if is_current and status is None:
+                color = ACCENT_HOVER
             if target.kind == Kind.BOSS:
-                char = "♛"
-            elif i == self.game.index:
-                char = "▶"  # objetivo actual
-            else:
-                char = "■"
-            lbl = tk.Label(
-                self.progress_blocks, text=char, bg=bg_fill, fg=fg_text,
-                font=(UI, 11, "bold"),
-                highlightthickness=1, highlightbackground=HAIRLINE,
+                # El jefe siempre se distingue en ambar (salvo ya derrotado/fallado).
+                if status is None:
+                    color = AMBER
+            height = 8 if is_current else 6
+            seg = ctk.CTkFrame(
+                self.progress_blocks, width=seg_w, height=height,
+                corner_radius=3, fg_color=color,
             )
-            # ipadx/ipady are geometry manager options, not widget config options
-            lbl.pack(side="left", padx=3, ipadx=6, ipady=2)
+            seg.pack(side="left", padx=3)
+            if target.kind == Kind.BOSS:
+                # Coronita junto al segmento del jefe.
+                ctk.CTkLabel(
+                    self.progress_blocks, text="👑", font=(UI, 11),
+                    fg_color="transparent",
+                ).pack(side="left", padx=(2, 0))
 
     def _flash(self, color: str) -> None:
         """Destello breve de la barra superior como feedback (pass/fail)."""
-        self.flash_bar.config(bg=color)
-        self.root.after(450, lambda: self.flash_bar.config(bg=BG))
+        self.flash_bar.configure(fg_color=color)
+        self.root.after(450, lambda: self.flash_bar.configure(fg_color=BG))
+
+    def _style_result(self, kind: str) -> None:
+        """Estiliza el banner de resultado (result_card) segun el veredicto.
+
+        idle      -> sin fill ni borde (transparente).
+        pass       -> fill BG + borde verde.
+        fail_amber -> fill ambar tenue + borde ambar (near miss / parcial).
+        fail_red   -> fill rojo tenue + borde rojo (lejos / error).
+        El color del texto (score/feedback) lo siguen poniendo sus propios setters.
+        """
+        styles = {
+            "idle": dict(fg_color="transparent", border_width=0),
+            "pass": dict(fg_color=BG, border_width=1, border_color=GREEN),
+            "fail_amber": dict(fg_color=AMBER_DIM, border_width=1, border_color=AMBER),
+            "fail_red": dict(fg_color=RED_DIM, border_width=1, border_color=RED),
+        }
+        self.result_card.configure(**styles.get(kind, styles["idle"]))
 
     # --------------------------------------------------------------- RPG chrome
     def _render_hp_bar(self) -> None:
         """Barra de dominio del objetivo: se llena con tu mejor accuracy lograda.
         Solo para oracion/jefe (multiword); oculta en input/win y en palabras."""
         if self.game is None or not self.game.current.is_multiword:
-            self.hp_wrap.pack_forget()
+            self.hp_bar.pack_forget()
             return
         hp = self._best_hp.get(id(self.game.current), 0.0)
-        ratio = max(0.0, min(1.0, hp / 100.0))
-        self.hp_fill.config(bg=self._score_color(hp))
-        self.hp_fill.place(relx=0, rely=0, relwidth=ratio, relheight=1)
+        self.hp_bar.configure(progress_color=self._score_color(hp))
+        self.hp_bar.set(max(0.0, min(1.0, hp / 100.0)))
         # after=progress_blocks -> queda entre la barra de bloques y el status line,
         # sin importar el orden de creacion de los widgets.
-        self.hp_wrap.pack(after=self.progress_blocks, pady=(6, 0))
+        self.hp_bar.pack(after=self.progress_blocks, pady=(0, 6))
 
     def _render_run_chrome(self) -> None:
         """Racha + combo bajo el badge. Solo muestra lo que vale la pena (>= 2)."""
@@ -820,28 +847,28 @@ class App:
             parts.append(f"Racha {self._streak}")
         if self._combo >= 2:
             parts.append(f"Combo x{self._combo}")
-        self.run_chrome.config(text="   ·   ".join(parts))
+        self.run_chrome.configure(text="   ·   ".join(parts))
 
     def _xp_flash(self, amount: int) -> None:
         """Muestra '+N XP' un instante y lo borra (con guard de generacion)."""
         self._xp_gen += 1
         gen = self._xp_gen
-        self.xp_flash.config(text=f"+{amount} XP")
+        self.xp_flash.configure(text=f"+{amount} XP")
         self.root.after(900, lambda: self._clear_xp_flash(gen))
 
     def _clear_xp_flash(self, gen: int) -> None:
         if self._xp_gen == gen:  # nadie disparo otro flash mientras tanto
-            self.xp_flash.config(text="")
+            self.xp_flash.configure(text="")
 
     def _render_start_stats(self) -> None:
         """Header de jugador en la pantalla inicial: 'Level N · Accuracy X%'."""
         if self.stats is None:
-            self.start_stats.config(text="")
+            self.start_stats.configure(text="")
             return
         text = f"Level {self.stats.level}"
         if self.stats.accuracy_count > 0:  # accuracy real solo si ya jugaste
             text += f"   ·   Accuracy {self.stats.accuracy:.0f}%"
-        self.start_stats.config(text=text)
+        self.start_stats.configure(text=text)
 
     # ----------------------------------------------------------- zoom de fuente
     def _target_font_size(self, t: "Target") -> int:
@@ -872,10 +899,10 @@ class App:
     def _apply_font_scale(self) -> None:
         """Re-aplica el zoom: feedback siempre; la card solo si muestra texto a leer
         (no el titulo ni el trofeo de victoria)."""
-        self.feedback.config(font=(UI, max(8, 11 + self._font_delta)))
+        self.feedback.configure(font=(UI, max(8, 12 + self._font_delta)))
         if self.game is not None and self.state in ("ready", "recording", "pass", "fail"):
             t = self.game.current
-            self.target.config(font=(UI, self._target_font_size(t), "bold"))
+            self.target.configure(font=(UI, self._target_font_size(t), "bold"))
 
     # ------------------------------------------------------------- acciones
     def _on_start(self, _event=None) -> str | None:
@@ -906,6 +933,7 @@ class App:
         self._run_xp = 0
         self._best_hp = {}
         self.game = Game(sentences)
+        # Los widgets de la pantalla inicial salen del layout durante el juego.
         self.entry.pack_forget()
         self.mic_row.pack_forget()
         self.start_stats.pack_forget()  # el header de jugador es solo de la input screen
@@ -924,10 +952,11 @@ class App:
         self._word_attempts = 0  # arranca un objetivo nuevo
         self.last_audio = None  # grabacion del objetivo anterior ya no aplica
         self._render_target()
-        self._score_badge("", BG, DIM)
+        self._score_badge("", DIM)
+        self._style_result("idle")
         self._clear_units()
         self._coach_clear()
-        self.feedback.config(text="", fg=INK_MUTED)
+        self.feedback.configure(text="", text_color=INK_MUTED)
         self._refresh_hints()
 
     def _on_space(self, _event=None) -> None:
@@ -973,7 +1002,7 @@ class App:
         self._errors[id(self.game.current)] = {}
         self._render_status_line()  # refresca la lista de palabras a mejorar
         self._refresh_hints()  # R/X dejan de aparecer si ya no hay errores
-        self.feedback.config(text="🧹 Lista de práctica reiniciada.", fg=DIM)
+        self.feedback.configure(text="🧹 Lista de práctica reiniciada.", text_color=DIM)
 
     def _on_skip_to_boss(self, _event=None) -> None:
         # A es un TOGGLE: si no estas en el jefe, vas al jefe (recordando de donde);
@@ -1074,9 +1103,9 @@ class App:
             return
         worst = [w for w, _s in self._worst_words()]
         if not worst:
-            self.feedback.config(
+            self.feedback.configure(
                 text="No hay palabras para practicar acá. Leé la oración primero.",
-                fg=DIM,
+                text_color=DIM,
             )
             return
         # Insertamos las palabras a practicar JUSTO antes del objetivo actual; al
@@ -1097,13 +1126,13 @@ class App:
                 msg = "Grabaste, pero no pude guardar el audio de ese micrófono."
             else:
                 msg = "Todavía no grabaste nada. Apretá ESPACIO y hablá."
-            self.feedback.config(text=msg, fg=DIM)
+            self.feedback.configure(text=msg, text_color=DIM)
             return
         self._start_play(self.last_audio)
 
     def _start_play(self, path: str) -> None:
         self.busy = True
-        self.hint.config(text="🔊 Reproduciendo TU voz…")
+        self.hint.configure(text="🔊 Reproduciendo TU voz…")
 
         def work() -> None:
             err = self.audio.play_recording(path)
@@ -1120,7 +1149,7 @@ class App:
     def _start_mic_test(self) -> None:
         self.busy = True
         device = self._selected_mic()
-        self.feedback.config(text="🎙 Grabando 3 segundos… ¡decí algo!", fg=ACCENT)
+        self.feedback.configure(text="🎙 Grabando 3 segundos… ¡decí algo!", text_color=ACCENT)
 
         def work() -> None:
             path, err = self.audio.record_test(device, seconds=3.0)
@@ -1141,11 +1170,12 @@ class App:
         self._word_attempts += 1
         self._clear_units()
         self._coach_clear()
-        # Semaforo en ROJO: el mic todavia se esta conectando, NO hables aun.
-        self._score_badge("⏳  Preparando micrófono…", BG, DIM)
-        self.feedback.config(text="Esperá la luz verde. Todavía NO hables.", fg=DIM)
-        self.hint.config(text="")
-        self.hint_keys.config(text="")  # durante la grabacion no hay teclas
+        # Semaforo: el mic todavia se esta conectando, NO hables aun.
+        self._score_badge("⏳  Preparando micrófono…", DIM)
+        self._style_result("idle")
+        self.feedback.configure(text="Esperá la luz verde. Todavía NO hables.", text_color=DIM)
+        # Durante la grabacion el CTA muestra "escuchando" y no ofrece accion util.
+        self.hint.configure(text="🎙 Escuchando…")
         target = self.game.current.reference
         device = self.mic_device
         long_form = self.game.current.long_form  # tolera pausas largas (oracion/jefe)
@@ -1173,23 +1203,25 @@ class App:
             Kind.SENTENCE: "Leé la oración completa, fuerte y claro.",
         }.get(kind, "Decí la palabra UNA sola vez, fuerte y claro.")
         if code == "listening":
-            # Estado ACTIVO -> fill ACCENT (azul = "estás en vivo"); texto blanco.
+            # Estado ACTIVO -> texto ACCENT (azul = "estás en vivo").
             # GREEN queda reservado SOLO para PASS, asi nunca significa dos cosas.
-            self._score_badge("🟢  ¡HABLÁ AHORA!", ACCENT, FG)
-            self.feedback.config(text=que, fg=INK_MUTED)
-            self.hint.config(text="Cuando termines, quedate en silencio un toque.")
+            self._score_badge("🟢  ¡HABLÁ AHORA!", ACCENT)
+            self.feedback.configure(text=que, text_color=INK_MUTED)
+            self.hint.configure(text="🎙 Escuchando…")
         elif code == "speech":
-            self._score_badge("🎤  Te escucho…", ACCENT, FG)
-            self.feedback.config(text="Seguí. Callate al terminar para cerrar.", fg=INK_MUTED)
+            self._score_badge("🎤  Te escucho…", ACCENT)
+            self.feedback.configure(
+                text="Seguí. Callate al terminar para cerrar.", text_color=INK_MUTED
+            )
         elif code == "processing":
-            # Warning/working -> fill YELLOW con texto NEGRO (14:1).
-            self._score_badge("⏳  Procesando…", YELLOW, BG)
-            self.feedback.config(text="Listo, dejá que Azure analice.", fg=INK_MUTED)
-            self.hint.config(text="")
+            # Working -> texto ambar.
+            self._score_badge("⏳  Procesando…", AMBER)
+            self.feedback.configure(text="Listo, dejá que Azure analice.", text_color=INK_MUTED)
+            self.hint.configure(text="🎙 Escuchando…")
 
     def _start_tts(self, text: str) -> None:
         self.busy = True
-        self.hint.config(text="🔊 Reproduciendo…")
+        self.hint.configure(text="🔊 Reproduciendo…")
 
         def work() -> None:
             err = self.scorer.speak(text)
@@ -1213,13 +1245,13 @@ class App:
                         continue  # se reseteo: no pisar la pantalla inicial
                     err = payload  # type: ignore[assignment]
                     if err:
-                        self.feedback.config(text=str(err), fg=RED)
+                        self.feedback.configure(text=str(err), text_color=RED)
                     self._refresh_hints()  # restaura la barra tras reproducir
                 elif kind == "mictest_status":
                     if payload == "playing" and self.state == "input":
-                        self.feedback.config(
+                        self.feedback.configure(
                             text="🔊 Reproduciendo lo que grabaste… ¿te escuchás?",
-                            fg=ACCENT,
+                            text_color=ACCENT,
                         )
                 elif kind == "mictest":
                     self.busy = False
@@ -1227,11 +1259,11 @@ class App:
                         continue
                     _path, err = payload  # type: ignore[misc]
                     if err:
-                        self.feedback.config(text=f"❌ {err}", fg=RED)
+                        self.feedback.configure(text=f"❌ {err}", text_color=RED)
                     else:
-                        self.feedback.config(
+                        self.feedback.configure(
                             text="✅ ¿Te escuchaste? El micrófono ANDA. Escribí tu oración y Enter.",
-                            fg=GREEN,
+                            text_color=GREEN,
                         )
                 elif kind == "tip":
                     gen, tip = payload  # type: ignore[misc]
@@ -1258,10 +1290,11 @@ class App:
             self._combo = 0
             self._status[id(self.game.current)] = "failed"  # intentado, no derrotado
             self._render_progress_blocks()
-            self._score_badge("—", RED, BG)
+            self._score_badge("✕  —", RED)
+            self._style_result("fail_red")
             self._clear_units()
             self._coach_clear()
-            self.feedback.config(text=a.error or "Algo salió mal.", fg=INK_MUTED)
+            self.feedback.configure(text=a.error or "Algo salió mal.", text_color=INK_MUTED)
             self._render_run_chrome()
             self._refresh_hints()
             return
@@ -1343,15 +1376,17 @@ class App:
                     self.stats.record_defeat(a.accuracy, XP_PER_DEFEAT)
                 self._xp_flash(XP_PER_DEFEAT)
             self._flash(GREEN)
-            self._score_badge(f"✅  {a.accuracy:.0f}%  ¡DERROTADA!", GREEN, BG)
+            self._score_badge(f"✅  {a.accuracy:.0f}%  ¡DERROTADA!", GREEN)
+            self._style_result("pass")
             if by_recognition:
-                self.feedback.config(
+                self.feedback.configure(
                     text=f"Cerca (≥ {threshold - self.config.near_miss_margin:.0f}%) y te entendí perfecto. ✓  {heard}".strip(),
-                    fg=INK_MUTED,
+                    text_color=INK_MUTED,
                 )
             else:
-                self.feedback.config(
-                    text=f"Todos los sonidos ≥ {threshold:.0f}%.  {heard}".strip(), fg=INK_MUTED
+                self.feedback.configure(
+                    text=f"Todos los sonidos ≥ {threshold:.0f}%.  {heard}".strip(),
+                    text_color=INK_MUTED,
                 )
             self._coach_clear()
             self._refresh_hints()
@@ -1360,17 +1395,24 @@ class App:
             self._streak = 0  # un fallo corta la racha y el combo
             self._combo = 0
             self._flash(RED)
+            # Parcial (>= 40) -> banner ambar; lejos (< 40) -> banner rojo.
+            partial = worst_score >= 40 if worst_label is not None else a.accuracy >= 40
+            badge_color = AMBER if partial else RED
+            icon = "⚠" if partial else "✕"
+            self._style_result("fail_amber" if partial else "fail_red")
             if worst_label is not None:
                 self._score_badge(
-                    f"❌  [{worst_label}] {worst_score:.0f}%  ·  faltan sonidos", RED, BG
+                    f"{icon}  [{worst_label}] {worst_score:.0f}%  ·  faltan sonidos",
+                    badge_color,
                 )
             else:
-                self._score_badge(f"❌  {a.accuracy:.0f}%", RED, BG)
+                self._score_badge(f"{icon}  {a.accuracy:.0f}%", badge_color)
             # Pista estatica: instantanea, discreta (vive en feedback). El umbral
             # vive arriba a la izquierda (goal_label), no acá: no es feedback.
             tip = self._fail_hint(a, is_multiword)
-            self.feedback.config(
-                text=f"{tip}" + (f"   ·   {heard}" if heard else ""), fg=INK_MUTED
+            self.feedback.configure(
+                text=f"{tip}" + (f"   ·   {heard}" if heard else ""),
+                text_color=INK_MUTED,
             )
             self._refresh_hints()
             # Consejo de DeepSeek: SE SUMA (no reemplaza) en el recuadro destacado.
@@ -1402,21 +1444,21 @@ class App:
         threading.Thread(target=work, daemon=True).start()
 
     # --------------------------------------------------- desglose visual
-    def _score_badge(self, text: str, fill: str, fg: str) -> None:
-        """Sets score badge as a filled chip (bordered) or idle text (no border)."""
-        self.score.config(text=text, bg=fill, fg=fg)
-        if fill != BG:
-            self.score.config(highlightthickness=1, highlightbackground=HAIRLINE)
-        else:
-            self.score.config(highlightthickness=0)
+    def _score_badge(self, text: str, text_color: str) -> None:
+        """Setea el texto del score con su color semantico.
+
+        El fondo del banner ya no lo lleva el badge: lo pone _style_result sobre
+        result_card. Aca solo va el texto + su color (GREEN pass, AMBER/RED fail,
+        DIM idle)."""
+        self.score.configure(text=text, text_color=text_color)
 
     def _score_color(self, score: float) -> str:
-        # Verde = pasa el umbral (la nueva regla: TODOS deben estar verdes para
-        # derrotar). Amarillo = cerca pero no alcanza. Rojo = lejos.
+        # Verde = pasa el umbral (la regla: TODOS deben estar verdes para
+        # derrotar). Ambar = parcial (>= 40). Rojo = lejos (< 40).
         if score >= self.config.pass_threshold:
             return GREEN
-        if score >= 75:
-            return YELLOW
+        if score >= 40:
+            return AMBER
         return RED
 
     def _render_units(self, units: list[tuple[str, float]], clickable: bool = False) -> None:
@@ -1430,6 +1472,8 @@ class App:
         n = len(units)
         if n == 0:
             return
+        # Hay tiles -> reinsertamos el contenedor en su lugar (antes del coach tip).
+        self.units.pack(before=self.coach_tip, pady=(8, 0))
         # Pocas (fonemas de una palabra) -> grandes, una fila. Muchas (palabras
         # del parrafo) -> chicas, mas columnas y varias filas, para que no
         # desborde la ventana aunque el texto sea largo.
@@ -1441,65 +1485,74 @@ class App:
         #   (~588px) y por ende no la infle.
         if not clickable:  # fonemas
             if n <= 7:
-                font_size, sub, cols, pad, ipad = 16, 9, n, (5, 2), (6, 4)
+                font_size, sub, cols, pad = 16, 9, n, (5, 2)
             elif n <= 14:
-                font_size, sub, cols, pad, ipad = 13, 8, 7, (4, 2), (4, 3)
+                font_size, sub, cols, pad = 13, 8, 7, (4, 2)
             else:
-                font_size, sub, cols, pad, ipad = 11, 7, 8, (3, 1), (3, 2)
+                font_size, sub, cols, pad = 11, 7, 8, (3, 1)
         else:  # palabras
             if n <= 6:
-                font_size, sub, cols, pad, ipad = 12, 8, n, (4, 2), (5, 3)
+                font_size, sub, cols, pad = 12, 8, n, (4, 2)
             elif n <= 12:
-                font_size, sub, cols, pad, ipad = 11, 7, 6, (3, 2), (4, 2)
+                font_size, sub, cols, pad = 11, 7, 6, (3, 2)
             elif n <= 24:
-                font_size, sub, cols, pad, ipad = 10, 7, 8, (3, 1), (3, 2)
+                font_size, sub, cols, pad = 10, 7, 8, (3, 1)
             else:
-                font_size, sub, cols, pad, ipad = 9, 7, 9, (3, 1), (3, 1)
+                font_size, sub, cols, pad = 9, 7, 9, (3, 1)
+        threshold = self.config.pass_threshold
         for i, (text, score) in enumerate(units):
-            # color is the FILL of the chip; BG (black) text on status fill.
-            color = self._score_color(score)
-            cell = tk.Frame(
-                self.units, bg=color,
-                highlightthickness=1, highlightbackground=HAIRLINE,
+            # Tile NEUTRO (SURFACE2): el color va en el NUMERO + el borde, no en un
+            # fill que gritaba. Borde: ok -> sutil; parcial (>=40) -> ambar; <40 -> rojo.
+            if score >= threshold:
+                border = BORDER
+            elif score >= 40:
+                border = AMBER
+            else:
+                border = RED
+            cell = ctk.CTkFrame(
+                self.units, fg_color=SURFACE2, corner_radius=8,
+                border_width=1, border_color=border,
             )
-            # ipadx/ipady are geometry manager options, not widget config options
-            cell.grid(
-                row=i // cols, column=i % cols,
-                padx=pad[0], pady=pad[1], ipadx=ipad[0], ipady=ipad[1],
+            cell.grid(row=i // cols, column=i % cols, padx=pad[0], pady=pad[1])
+            wlabel = ctk.CTkLabel(
+                cell, text=text, text_color=FG,
+                font=(UI, font_size, "bold"), fg_color="transparent",
             )
-            wlabel = tk.Label(
-                cell, text=text, bg=color, fg=BG,
-                font=(UI, font_size, "bold"),
+            wlabel.pack(padx=8, pady=(5, 0))
+            slabel = ctk.CTkLabel(
+                cell, text=f"{score:.0f}%", text_color=self._score_color(score),
+                font=(UI, sub, "bold"), fg_color="transparent",
             )
-            wlabel.pack()
-            slabel = tk.Label(
-                cell, text=f"{score:.0f}%", bg=color, fg=BG,
-                font=(UI, sub, "bold"),
-            )
-            slabel.pack()
+            slabel.pack(padx=8, pady=(0, 5))
             if clickable:
                 # Click en la palabra -> la reproduce (recordatorio rapido).
+                # CTkFrame/CTkLabel exponen bind para el click; el cursor se setea
+                # via configure(cursor=...).
                 for widget in (cell, wlabel, slabel):
-                    widget.config(cursor="hand2")
+                    widget.configure(cursor="hand2")
                     widget.bind("<Button-1>", lambda _e, w=text: self._on_word_click(w))
 
     def _clear_units(self) -> None:
         for child in self.units.winfo_children():
             child.destroy()
+        # Un CTkFrame VACIO no se encoge (queda en su tamaño default ~200x200), asi
+        # que lo sacamos del layout cuando no tiene tiles para no dejar un hueco.
+        self.units.pack_forget()
 
     # ---- recuadro del consejo de DeepSeek (la pista estatica vive en feedback) --
     def _coach_clear(self) -> None:
-        self.coach_tip.config(text="", bg=BG, fg=DIM, highlightthickness=0)
+        self.coach_tip.configure(text="", fg_color="transparent", text_color=DIM)
 
     def _coach_loading(self) -> None:
         # Mientras DeepSeek piensa: texto tenue, sin recuadro.
-        self.coach_tip.config(text="🧠 pensando un consejo…", bg=BG, fg=DIM, highlightthickness=0)
+        self.coach_tip.configure(
+            text="🧠 pensando un consejo…", fg_color="transparent", text_color=DIM
+        )
 
     def _coach_show(self, tip: str) -> None:
-        # Consejo listo: SURFACE1 card + hairline + FG text (surface-1 elevation).
-        self.coach_tip.config(
-            text=f"🧠  {tip}", bg=SURFACE1, fg=FG,
-            highlightthickness=1, highlightbackground=HAIRLINE,
+        # Consejo listo: card SURFACE1 redondeada con texto FG (surface-1 elevation).
+        self.coach_tip.configure(
+            text=f"🧠  {tip}", fg_color=SURFACE1, text_color=FG, corner_radius=10
         )
 
     def _fail_hint(self, a: Assessment, is_multiword: bool) -> str:
@@ -1526,26 +1579,29 @@ class App:
             self.stats.best_streak = max(self.stats.best_streak, self._streak)
             self.store.save(self.stats)
         self._flash(GREEN)
-        self.progress.config(text="")
-        self.incoming.config(text="")
-        self.hp_wrap.pack_forget()  # sin barra de HP en la pantalla de victoria
-        self.run_chrome.config(text="")
-        self.xp_flash.config(text="")
+        self.progress.configure(text="")
+        self.incoming.configure(text="")
+        self.hp_bar.pack_forget()  # sin barra de HP en la pantalla de victoria
+        self.run_chrome.configure(text="")
+        self.xp_flash.configure(text="")
         for child in self.progress_blocks.winfo_children():
             child.destroy()
-        # WIN: GREEN fill hero card with BG (black) text — the trophy block.
-        # Centrado (no hereda el anchor="w" de la ultima oracion) y borde reseteado
-        # al hairline (por si venimos del jefe con su borde amarillo de 2px).
-        self.target.config(
-            text="🏆  ¡GANASTE!", bg=GREEN, fg=BG, font=(UI, 30, "bold"),
+        self.progress_blocks.pack_forget()  # vacio: no dejar el hueco de 200x200
+        # WIN: card hero verde con texto BG (negro) — el bloque trofeo. Centrado
+        # (no hereda el anchor="w" de la ultima oracion). El acento se funde con el
+        # verde y la card resetea su borde (por si venimos del jefe con borde ambar).
+        self.target_card.configure(fg_color=GREEN, border_color=GREEN, border_width=1)
+        self.target_accent.configure(fg_color=GREEN)
+        self.target.configure(
+            text="🏆  ¡GANASTE!", text_color=BG, font=(UI, 28, "bold"),
             justify="center", anchor="center",
         )
-        _bordered(self.target, 1)
-        self._score_badge("", BG, DIM)
+        self._score_badge("", DIM)
+        self._style_result("idle")
         self._clear_units()
         xp_line = f"   ·   +{self._run_xp} XP" if self._run_xp else ""
-        self.feedback.config(
-            text=f"Leíste todo el párrafo. ¡Crack!{xp_line}", fg=INK_MUTED
+        self.feedback.configure(
+            text=f"Leíste todo el párrafo. ¡Crack!{xp_line}", text_color=INK_MUTED
         )
         self._refresh_hints()
 
@@ -1586,7 +1642,7 @@ def main() -> None:
     from coach import Coach
     from scorer import Scorer
 
-    root = tk.Tk()
+    root = ctk.CTk()
     App(root, config, Scorer(config), Coach(config), LocalAudio())
     root.mainloop()
 

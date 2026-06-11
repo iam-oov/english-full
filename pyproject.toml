@@ -11,6 +11,7 @@ dependencies = [
     # Motor de scoring: captura de mic, reconocimiento, pronunciation
     # assessment y TTS, todo en este unico paquete.
     "azure-cognitiveservices-speech>=1.40.0",
+    "customtkinter>=5.2.2",
     "requests>=2.34.2",
     "sounddevice>=0.5.5",
 ]

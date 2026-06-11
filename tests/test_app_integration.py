@@ -8,8 +8,7 @@ corresponde, sin tocar la nube.
 
 from __future__ import annotations
 
-import tkinter as tk
-
+import customtkinter as ctk
 import pytest
 
 from app import App
@@ -71,7 +70,7 @@ class FakeAudio:
 
 @pytest.fixture
 def app():
-    root = tk.Tk()
+    root = ctk.CTk()
     instance = App(
         root, _config(), FakeScorer(), FakeCoach(), FakeAudio(),
         store=InMemoryProgressStore(),

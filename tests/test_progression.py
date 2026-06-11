@@ -7,8 +7,7 @@ transiciones de estado ni tocar disco. La unica escritura ocurre en _win.
 
 from __future__ import annotations
 
-import tkinter as tk
-
+import customtkinter as ctk
 import pytest
 
 from app import App
@@ -69,7 +68,7 @@ def make_app():
     roots: list[tk.Tk] = []
 
     def _make(store=None):
-        root = tk.Tk()
+        root = ctk.CTk()
         roots.append(root)
         app = App(
             root, _config(), _FakeScorer(), _FakeCoach(), _FakeAudio(),

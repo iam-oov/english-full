@@ -15,6 +15,7 @@ import pytest
 from app import App
 from assessment import Assessment, WordScore
 from config import Config
+from progress import InMemoryProgressStore
 
 
 def _config(**over) -> Config:
@@ -71,7 +72,10 @@ class FakeAudio:
 @pytest.fixture
 def app():
     root = tk.Tk()
-    instance = App(root, _config(), FakeScorer(), FakeCoach(), FakeAudio())
+    instance = App(
+        root, _config(), FakeScorer(), FakeCoach(), FakeAudio(),
+        store=InMemoryProgressStore(),
+    )
     instance._begin_game(["hello world"])
     yield instance
     root.destroy()

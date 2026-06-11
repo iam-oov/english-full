@@ -31,6 +31,7 @@ from enum import Enum
 from assessment import Assessment
 from config import Config
 from ports import AudioIO, PronunciationCoach, PronunciationScorer
+from progress import LifetimeStats, ProgressStore, XP_PER_DEFEAT
 from scoring import judge
 
 
@@ -98,6 +99,9 @@ KEYS = {
     "clear": "x",  # reiniciar la lista de palabras a practicar del objetivo
     "prev": "q",  # navegar al sub-jefe/jefe ANTERIOR
     "next": "w",  # navegar al sub-jefe/jefe SIGUIENTE
+    # Teclas de UI (no audio): zoom de la fuente del texto a leer + el feedback.
+    "font_up": "p",  # agrandar la fuente
+    "font_down": "l",  # achicar la fuente
 }
 
 # Pistas para los sonidos del ingles que mas cuestan a un hispanohablante.
@@ -227,6 +231,7 @@ class App:
         scorer: PronunciationScorer,
         coach: PronunciationCoach,
         audio: AudioIO,
+        store: ProgressStore | None = None,
     ) -> None:
         self.root = root
         self.config = config
@@ -235,6 +240,11 @@ class App:
         self.scorer = scorer
         self.coach = coach  # DeepSeek (opcional): ranking + consejos
         self.audio = audio  # grabar prueba de mic + reproducir WAV (local, sin Azure)
+        # Progresion persistida (XP/nivel/accuracy de por vida). Keyword opcional:
+        # los tests inyectan un doble en memoria. ProgressStore() solo arma un Path,
+        # no toca disco hasta save() (que solo corre en _win).
+        self.store = store or ProgressStore()
+        self.stats: LifetimeStats | None = None  # se carga lazy en _show_input
         self.results: "queue.Queue[tuple[str, object]]" = queue.Queue()
 
         self.game: Game | None = None
@@ -262,6 +272,14 @@ class App:
         # y limpiar al salir.
         self._practice_origin: Target | None = None
         self._practice_targets: list[Target] = []
+        # Contadores RPG de UNA corrida (parrafo): efimeros, se resetean en
+        # _begin_game. La progresion DE POR VIDA vive en self.stats (persistida).
+        self._streak = 0  # objetivos derrotados al hilo sin un fallo en el medio
+        self._combo = 0  # palabras perfectas seguidas (cruza intentos)
+        self._run_xp = 0  # XP ganado en esta corrida (para el resumen al ganar)
+        self._best_hp: dict[int, float] = {}  # id(Target) -> mejor accuracy lograda
+        self._xp_gen = 0  # invalida un flash de XP viejo si llega otro antes de borrarse
+        self._font_delta = 0  # zoom de fuente (P/L) del texto a leer + feedback
 
         self._build_ui()
         self._bind_keys()
@@ -279,12 +297,16 @@ class App:
         self.flash_bar.pack(side="top", fill="x")
 
         # Indicador de OBJETIVO (config, no feedback): arriba-izquierda, chico y
-        # tenue. Te recuerda visualmente el umbral por sonido.
-        tk.Label(
+        # tenue. Te recuerda visualmente el umbral por sonido. Va con .place (capa
+        # propia sobre root); como la columna `content` se crea despues y es alta,
+        # la solaparia con su fondo negro -> al final de _build_ui la subimos con
+        # .lift() para que quede ENCIMA y se lea entera.
+        self.goal_label = tk.Label(
             self.root,
             text=f"🎯 objetivo: {self.config.pass_threshold:.0f}% por sonido",
             bg=BG, fg=DIM, font=(UI, 9),
-        ).place(x=12, y=12)
+        )
+        self.goal_label.place(x=12, y=12)
 
         # Columna central de ancho fijo: agrupa el contenido y lo centra como un
         # bloque, para que en pantallas anchas (ultrawide) NO quede flotando en una
@@ -311,6 +333,20 @@ class App:
         self.progress_blocks = tk.Frame(self.content, bg=BG)
         self.progress_blocks.pack(pady=(8, 0))
 
+        # Barra de "HP"/dominio del objetivo actual: se LLENA con tu mejor accuracy
+        # (vacia = sin dominar, full verde = derrotado). Ancho fijo + pack_propagate
+        # False para que el fill por `place` (relwidth) sea estable. Se packea/oculta
+        # dinamicamente en _render_hp_bar (solo para oracion/jefe, no en input/win).
+        self.hp_wrap = tk.Frame(
+            self.content, bg=SURFACE2, width=300, height=10,
+            highlightthickness=1, highlightbackground=HAIRLINE,
+        )
+        self.hp_wrap.pack_propagate(False)
+        self.hp_fill = tk.Frame(self.hp_wrap, bg=GREEN)
+        self.hp_fill.place(relx=0, rely=0, relwidth=0.0, relheight=1)
+
+        # Status line: usa justify="left" para que la lista numerada "A practicar"
+        # (multi-linea) se lea como lista; en los textos de una linea no cambia nada.
         self.incoming = tk.Label(
             self.content,
             text="",
@@ -318,6 +354,7 @@ class App:
             fg=INK_MUTED,
             font=(UI, 11),
             wraplength=540,
+            justify="left",
         )
         self.incoming.pack(pady=(8, 0))
 
@@ -344,6 +381,13 @@ class App:
         # fill="x" -> la card abarca el ancho de la columna y se lee como tarjeta
         # (no como un bloque de texto flotando). El alto NO se expande (sin expand).
         self.target.pack(pady=(8, 0), ipadx=24, ipady=20, fill="x")
+
+        # Header de jugador (solo pantalla inicial): "Level N · Accuracy X%" leido de
+        # la progresion persistida. Se packea en _show_input (antes del paste box) y
+        # se oculta al empezar, igual que entry/mic_row.
+        self.start_stats = tk.Label(
+            self.content, text="", bg=BG, fg=INK_MUTED, font=(UI, 12, "bold"),
+        )
 
         # Cuadro multi-linea para PEGAR un parrafo (Enter = salto de linea;
         # Shift+Enter = empezar).
@@ -403,6 +447,15 @@ class App:
         # ipadx/ipady are geometry manager options, not widget config options
         self.score.pack(pady=(8, 0), ipadx=10, ipady=4)
 
+        # Chrome de la corrida: racha + combo, chiquito y tenue bajo el badge.
+        self.run_chrome = tk.Label(self.content, text="", bg=BG, fg=DIM, font=(UI, 10))
+        self.run_chrome.pack(pady=(4, 0))
+        # Flash de XP: aparece breve (+40 XP) al derrotar un objetivo nuevo.
+        self.xp_flash = tk.Label(
+            self.content, text="", bg=BG, fg=GREEN, font=(UI, 11, "bold"),
+        )
+        self.xp_flash.pack(pady=(2, 0))
+
         # Desglose por fonema (palabra) o por palabra (jefe): cada unidad se
         # pinta segun su score. Aca el usuario VE donde estuvo el problema.
         # Vive en `content` (NO en root) para quedar dentro de la columna central.
@@ -417,7 +470,7 @@ class App:
             text="",
             bg=BG,
             fg=INK_MUTED,
-            font=(UI, 12),
+            font=(UI, 11),
             wraplength=540,
         )
         self.feedback.pack(pady=(8, 0))
@@ -440,7 +493,8 @@ class App:
         # Renglon 3: comandos de sistema (siempre), bien tenue.
         self.hint_sys = tk.Label(
             self.root,
-            text="Ctrl+R: reset   ·   ESC: salir",
+            text=f"{self._k('font_up')}/{self._k('font_down')}: fuente"
+            "   ·   Ctrl+R: reset   ·   ESC: salir",
             bg=BG, fg=DIM, font=(UI, 9),
         )
         self.hint_sys.pack(side="bottom", pady=(0, 8))
@@ -468,6 +522,9 @@ class App:
         # ipadx/ipady are geometry manager options, not widget config options
         self.hint.pack(pady=(16, 0), ipadx=24, ipady=12, fill="x")
 
+        # La etiqueta de objetivo (.place sobre root) tiene que quedar ENCIMA de la
+        # columna `content` (que se creo despues y la solapa). lift() la sube al tope.
+        self.goal_label.lift()
         self._show_input()
 
     def _list_microphones(self) -> list[tuple[str, object]]:
@@ -510,6 +567,9 @@ class App:
         self._bind_letter(KEYS["clear"], self._on_clear_errors)
         self._bind_letter(KEYS["prev"], self._on_prev)
         self._bind_letter(KEYS["next"], self._on_next)
+        # Zoom de fuente (UI, no audio): P agranda, L achica.
+        self._bind_letter(KEYS["font_up"], self._on_font_bigger)
+        self._bind_letter(KEYS["font_down"], self._on_font_smaller)
         self.root.bind("<Escape>", lambda _e: self.root.destroy())
         self.root.bind("<Control-r>", self._reset)
         self.root.bind("<Control-R>", self._reset)
@@ -585,9 +645,18 @@ class App:
     # ----------------------------------------------------------- pantallas
     def _show_input(self) -> None:
         self.state = "input"
+        # Carga unica de la progresion desde disco. Es un READ benigno: si el
+        # archivo no existe devuelve stats frescas y NO lo crea (clave para que los
+        # tests que construyen un App no escriban a disco).
+        if self.stats is None:
+            self.stats = self.store.load()
         self.progress.config(text="")
         self.incoming.config(text="")
         self._render_progress_blocks()  # game es None -> limpia los bloques
+        self._render_hp_bar()  # game es None -> oculta la barra de HP
+        self.run_chrome.config(text="")  # sin racha/combo en la pantalla inicial
+        self.xp_flash.config(text="")
+        self._render_start_stats()  # "Level N · Accuracy X%"
         # Titulo: centrado (hero), y reseteo del borde por si venimos de un jefe
         # (que deja el borde amarillo de 2px).
         self.target.config(
@@ -607,6 +676,7 @@ class App:
         self.entry.delete("1.0", "end")
         self.entry.pack(before=self.score)  # mantiene su lugar tras un reset
         self.mic_row.pack(before=self.score, pady=(8, 0))  # elegir mic acá
+        self.start_stats.pack(before=self.entry, pady=(0, 4))  # header arriba del paste
         self.entry.focus_set()
 
     def _reset(self, _event=None) -> None:
@@ -628,11 +698,14 @@ class App:
         t = self.game.current
         n = len(self.game.targets)
         kind_label = {
-            Kind.WORD: "Práctica", Kind.SENTENCE: "Oración", Kind.BOSS: "👑 JEFE FINAL"
+            Kind.WORD: "Cola de práctica", Kind.SENTENCE: "Oración",
+            Kind.BOSS: "👑 JEFE FINAL",
         }.get(t.kind, "Objetivo")
         self.progress.config(text=f"{kind_label}   ·   {self.game.index + 1} / {n}")
         self._render_progress_blocks()
         self._render_status_line()  # palabras a mejorar / proxima, bajo la barra
+        self._render_hp_bar()  # barra de dominio del objetivo actual
+        self._render_run_chrome()  # racha / combo
 
         # Tamaño segun largo: el parrafo (jefe) chico, oracion mediana, palabra
         # grande. El jefe ademas baja a 15 si es MUY largo (>220 chars).
@@ -640,15 +713,14 @@ class App:
         # como banner centrado); palabra suelta centrada (es corta).
         # El "peligro" del jefe va por BORDE amarillo (2px), NO por fill amarillo
         # full: el fill gritaba ERROR/alerta. SENTENCE/WORD vuelven al hairline 1px.
+        size = self._target_font_size(t)  # incluye el zoom P/L (self._font_delta)
         if t.kind == Kind.BOSS:
-            size = 15 if len(t.label) > 220 else 18
             self.target.config(
                 text=t.label, bg=SURFACE1, fg=FG, font=(UI, size, "bold"),
                 justify="left", anchor="w",
                 highlightthickness=2, highlightbackground=YELLOW,
             )
         elif t.kind == Kind.SENTENCE:
-            size = 14 if len(t.label) > 90 else 16
             self.target.config(
                 text=t.label, bg=SURFACE1, fg=FG, font=(UI, size, "bold"),
                 justify="left", anchor="w",
@@ -656,7 +728,7 @@ class App:
             _bordered(self.target, 1)
         else:  # word (practica): una sola palabra -> centrada
             self.target.config(
-                text=t.label, bg=SURFACE1, fg=ACCENT, font=(UI, 20, "bold"),
+                text=t.label, bg=SURFACE1, fg=ACCENT, font=(UI, size, "bold"),
                 justify="center", anchor="center",
             )
             _bordered(self.target, 1)
@@ -669,15 +741,18 @@ class App:
             return
         worst = self._worst_words() if self.game.current.is_multiword else []
         if worst:
-            resumen = "  |  ".join(f"{w}×{c}" for w, c in worst[:8])
-            # El jefe rotula "Puntos débiles" (foco en QUE mejorar); la oracion
-            # invita a la cola de practica con la tecla R.
+            # El jefe rotula "Puntos débiles" con un pipe list compacto (foco en QUE
+            # mejorar). La oracion muestra una cola numerada "A practicar (R)" -> se
+            # lee como lista de tareas, no como metricas sueltas.
             if self.game.current.kind == Kind.BOSS:
+                resumen = "  |  ".join(f"{w}×{c}" for w, c in worst[:8])
                 self.incoming.config(text=f"Puntos débiles:  {resumen}", fg=INK_MUTED)
             else:
+                lines = "\n".join(
+                    f"  {i}. {w}  ×{c}" for i, (w, c) in enumerate(worst[:6], 1)
+                )
                 self.incoming.config(
-                    text=f"{self._k('practice')} (Practicar):  {resumen}",
-                    fg=INK_MUTED,
+                    text=f"A practicar ({self._k('practice')}):\n{lines}", fg=INK_MUTED,
                 )
             return
         upcoming = self.game.targets[self.game.index + 1 :]
@@ -723,6 +798,85 @@ class App:
         self.flash_bar.config(bg=color)
         self.root.after(450, lambda: self.flash_bar.config(bg=BG))
 
+    # --------------------------------------------------------------- RPG chrome
+    def _render_hp_bar(self) -> None:
+        """Barra de dominio del objetivo: se llena con tu mejor accuracy lograda.
+        Solo para oracion/jefe (multiword); oculta en input/win y en palabras."""
+        if self.game is None or not self.game.current.is_multiword:
+            self.hp_wrap.pack_forget()
+            return
+        hp = self._best_hp.get(id(self.game.current), 0.0)
+        ratio = max(0.0, min(1.0, hp / 100.0))
+        self.hp_fill.config(bg=self._score_color(hp))
+        self.hp_fill.place(relx=0, rely=0, relwidth=ratio, relheight=1)
+        # after=progress_blocks -> queda entre la barra de bloques y el status line,
+        # sin importar el orden de creacion de los widgets.
+        self.hp_wrap.pack(after=self.progress_blocks, pady=(6, 0))
+
+    def _render_run_chrome(self) -> None:
+        """Racha + combo bajo el badge. Solo muestra lo que vale la pena (>= 2)."""
+        parts = []
+        if self._streak >= 2:
+            parts.append(f"Racha {self._streak}")
+        if self._combo >= 2:
+            parts.append(f"Combo x{self._combo}")
+        self.run_chrome.config(text="   ·   ".join(parts))
+
+    def _xp_flash(self, amount: int) -> None:
+        """Muestra '+N XP' un instante y lo borra (con guard de generacion)."""
+        self._xp_gen += 1
+        gen = self._xp_gen
+        self.xp_flash.config(text=f"+{amount} XP")
+        self.root.after(900, lambda: self._clear_xp_flash(gen))
+
+    def _clear_xp_flash(self, gen: int) -> None:
+        if self._xp_gen == gen:  # nadie disparo otro flash mientras tanto
+            self.xp_flash.config(text="")
+
+    def _render_start_stats(self) -> None:
+        """Header de jugador en la pantalla inicial: 'Level N · Accuracy X%'."""
+        if self.stats is None:
+            self.start_stats.config(text="")
+            return
+        text = f"Level {self.stats.level}"
+        if self.stats.accuracy_count > 0:  # accuracy real solo si ya jugaste
+            text += f"   ·   Accuracy {self.stats.accuracy:.0f}%"
+        self.start_stats.config(text=text)
+
+    # ----------------------------------------------------------- zoom de fuente
+    def _target_font_size(self, t: "Target") -> int:
+        """Tamaño de la card de lectura segun tipo+largo, con el zoom P/L sumado.
+        Unica fuente del calculo: la usan _render_target y _apply_font_scale."""
+        if t.kind == Kind.BOSS:
+            base, floor = (13 if len(t.label) > 220 else 15), 8
+        elif t.kind == Kind.SENTENCE:
+            base, floor = (12 if len(t.label) > 90 else 14), 8
+        else:  # word (drill)
+            base, floor = 20, 10
+        return max(floor, base + self._font_delta)
+
+    def _on_font_bigger(self, _event=None) -> None:
+        self._bump_font(+2)
+
+    def _on_font_smaller(self, _event=None) -> None:
+        self._bump_font(-2)
+
+    def _bump_font(self, step: int) -> None:
+        """Zoom de la card de lectura + el feedback. No actua en la pantalla inicial:
+        ahi no hay texto que leer y P/L son letras que podrias estar tipeando."""
+        if self.game is None or self.state == "input":
+            return
+        self._font_delta = max(-6, min(16, self._font_delta + step))
+        self._apply_font_scale()
+
+    def _apply_font_scale(self) -> None:
+        """Re-aplica el zoom: feedback siempre; la card solo si muestra texto a leer
+        (no el titulo ni el trofeo de victoria)."""
+        self.feedback.config(font=(UI, max(8, 11 + self._font_delta)))
+        if self.game is not None and self.state in ("ready", "recording", "pass", "fail"):
+            t = self.game.current
+            self.target.config(font=(UI, self._target_font_size(t), "bold"))
+
     # ------------------------------------------------------------- acciones
     def _on_start(self, _event=None) -> str | None:
         if self.busy or self.state != "input":
@@ -746,9 +900,15 @@ class App:
         self._return_target = None
         self._practice_origin = None
         self._practice_targets = []
+        # Cada parrafo es una corrida nueva: los contadores RPG arrancan de cero.
+        self._streak = 0
+        self._combo = 0
+        self._run_xp = 0
+        self._best_hp = {}
         self.game = Game(sentences)
         self.entry.pack_forget()
         self.mic_row.pack_forget()
+        self.start_stats.pack_forget()  # el header de jugador es solo de la input screen
         self.root.focus_set()
         self._enter_ready()
 
@@ -1094,12 +1254,15 @@ class App:
 
         if not a.ok:
             self.state = "fail"
+            self._streak = 0  # un fallo corta la racha y el combo
+            self._combo = 0
             self._status[id(self.game.current)] = "failed"  # intentado, no derrotado
             self._render_progress_blocks()
             self._score_badge("—", RED, BG)
             self._clear_units()
             self._coach_clear()
             self.feedback.config(text=a.error or "Algo salió mal.", fg=INK_MUTED)
+            self._render_run_chrome()
             self._refresh_hints()
             return
 
@@ -1119,11 +1282,29 @@ class App:
                 else:
                     errs.pop(label, None)
             self._render_status_line()  # las muestra bajo la barra de progreso
+            # Combo: palabras PERFECTAS seguidas (>= max(umbral, 97)). Recorre en
+            # orden; la primera que no llega lo corta. Si el intento termina fallando,
+            # la rama de fail lo resetea igual (un fallo rompe el combo).
+            perfect_bar = max(threshold, 97.0)
+            for _label, score in units:
+                self._combo = self._combo + 1 if score >= perfect_bar else 0
         else:
             phons = a.words[0].phonemes if a.words else []
             units = [(p.phoneme, p.accuracy) for p in phons]
+        # El JEFE no muestra el muro de tiles de TODAS las palabras (eso era el caos
+        # del feedback #5): muestra solo los PUNTOS DEBILES (las que no llegan al
+        # umbral). Asi el grid no infla la columna ni desborda la ventana. La oracion
+        # corta si muestra todas (son pocas y caben). `units` completo se conserva
+        # arriba para el conteo de errores y el combo.
+        display_units = units
+        if self.game.current.kind == Kind.BOSS:
+            display_units = [(w, s) for w, s in units if s < threshold]
         # Las PALABRAS (oracion/parrafo) son clickeables para oirlas; los fonemas no.
-        self._render_units(units, clickable=is_multiword)
+        self._render_units(display_units, clickable=is_multiword)
+        # HP del objetivo = mejor accuracy lograda (la barra se llena al mejorar).
+        tid = id(self.game.current)
+        self._best_hp[tid] = max(self._best_hp.get(tid, 0.0), a.accuracy)
+        self._render_hp_bar()
 
         # Regla de aprobado (dominio puro en scoring.py): regla estricta — TODOS
         # los sonidos >= umbral — mas el rescate near-miss. La justificacion
@@ -1144,11 +1325,23 @@ class App:
         worst_label, worst_score = verdict.worst_label, verdict.worst_score
 
         # Estado para los cuadritos: verde si lo derrotaste, rojo si no.
+        # Capturamos el estado PREVIO antes de pisarlo: distingue una derrota nueva
+        # (da XP) de re-pasar algo ya derrotado (no farmea).
+        prev_status = self._status.get(id(self.game.current))
         self._status[id(self.game.current)] = "defeated" if passed else "failed"
         self._render_progress_blocks()
 
         if passed:
             self.state = "pass"
+            self._streak += 1  # un objetivo mas al hilo (re-pase incluido)
+            if self.stats is not None:
+                self.stats.best_streak = max(self.stats.best_streak, self._streak)
+            # XP solo la PRIMERA vez que se derrota este objetivo (re-pasar no suma).
+            if prev_status != "defeated":
+                self._run_xp += XP_PER_DEFEAT
+                if self.stats is not None:
+                    self.stats.record_defeat(a.accuracy, XP_PER_DEFEAT)
+                self._xp_flash(XP_PER_DEFEAT)
             self._flash(GREEN)
             self._score_badge(f"✅  {a.accuracy:.0f}%  ¡DERROTADA!", GREEN, BG)
             if by_recognition:
@@ -1164,6 +1357,8 @@ class App:
             self._refresh_hints()
         else:
             self.state = "fail"
+            self._streak = 0  # un fallo corta la racha y el combo
+            self._combo = 0
             self._flash(RED)
             if worst_label is not None:
                 self._score_badge(
@@ -1185,6 +1380,7 @@ class App:
                 self._request_tip(a)
             else:
                 self._coach_clear()
+        self._render_run_chrome()  # actualiza racha/combo tras pass o fail
 
     def _request_tip(self, a: Assessment) -> None:
         word = self.game.current.reference
@@ -1237,16 +1433,28 @@ class App:
         # Pocas (fonemas de una palabra) -> grandes, una fila. Muchas (palabras
         # del parrafo) -> chicas, mas columnas y varias filas, para que no
         # desborde la ventana aunque el texto sea largo.
-        # ipad = aire INTERNO del tile (ipadx, ipady en el grid). Los tiles con
-        # pocas unidades (fonemas) respiran mas; los del jefe van compactos.
-        if n <= 7:
-            font_size, sub, cols, pad, ipad = 16, 9, n, (5, 2), (6, 4)
-        elif n <= 14:
-            font_size, sub, cols, pad, ipad = 13, 8, 7, (4, 2), (4, 3)
-        elif n <= 30:
-            font_size, sub, cols, pad, ipad = 11, 7, 10, (3, 1), (3, 2)
-        else:  # parrafo largo (jefe): lo mas compacto
-            font_size, sub, cols, pad, ipad = 9, 7, 12, (3, 1), (3, 1)
+        # ipad = aire INTERNO del tile (ipadx, ipady en el grid). Dos escalas:
+        # - FONEMAS (palabra suelta, clickable=False): labels cortos (1-2 chars) ->
+        #   van grandes, pocas columnas.
+        # - PALABRAS (oracion/jefe, clickable=True): labels largos -> fuente menor y
+        #   mas columnas, para que el grid NO supere el ancho de la columna central
+        #   (~588px) y por ende no la infle.
+        if not clickable:  # fonemas
+            if n <= 7:
+                font_size, sub, cols, pad, ipad = 16, 9, n, (5, 2), (6, 4)
+            elif n <= 14:
+                font_size, sub, cols, pad, ipad = 13, 8, 7, (4, 2), (4, 3)
+            else:
+                font_size, sub, cols, pad, ipad = 11, 7, 8, (3, 1), (3, 2)
+        else:  # palabras
+            if n <= 6:
+                font_size, sub, cols, pad, ipad = 12, 8, n, (4, 2), (5, 3)
+            elif n <= 12:
+                font_size, sub, cols, pad, ipad = 11, 7, 6, (3, 2), (4, 2)
+            elif n <= 24:
+                font_size, sub, cols, pad, ipad = 10, 7, 8, (3, 1), (3, 2)
+            else:
+                font_size, sub, cols, pad, ipad = 9, 7, 9, (3, 1), (3, 1)
         for i, (text, score) in enumerate(units):
             # color is the FILL of the chip; BG (black) text on status fill.
             color = self._score_color(score)
@@ -1312,9 +1520,17 @@ class App:
 
     def _win(self) -> None:
         self.state = "win"
+        # Unico punto de ESCRITURA a disco: al ganar persistimos la progresion.
+        # Los tests nunca llegan aca (no escriben). best_streak se consolida ahora.
+        if self.stats is not None:
+            self.stats.best_streak = max(self.stats.best_streak, self._streak)
+            self.store.save(self.stats)
         self._flash(GREEN)
         self.progress.config(text="")
         self.incoming.config(text="")
+        self.hp_wrap.pack_forget()  # sin barra de HP en la pantalla de victoria
+        self.run_chrome.config(text="")
+        self.xp_flash.config(text="")
         for child in self.progress_blocks.winfo_children():
             child.destroy()
         # WIN: GREEN fill hero card with BG (black) text — the trophy block.
@@ -1327,8 +1543,9 @@ class App:
         _bordered(self.target, 1)
         self._score_badge("", BG, DIM)
         self._clear_units()
+        xp_line = f"   ·   +{self._run_xp} XP" if self._run_xp else ""
         self.feedback.config(
-            text="Leíste todo el párrafo. ¡Crack!", fg=INK_MUTED
+            text=f"Leíste todo el párrafo. ¡Crack!{xp_line}", fg=INK_MUTED
         )
         self._refresh_hints()
 

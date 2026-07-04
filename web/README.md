@@ -1,0 +1,56 @@
+# Pronunciation Tetris — web
+
+Port web (Astro + React) del juego de escritorio que vive en la raíz del repo.
+Misma mecánica: pegás un párrafo, cada oración es un sub-jefe y el párrafo
+entero es el jefe final. Solo avanzás si **cada sonido** supera el umbral
+(94% por defecto), no el promedio; el near-miss es la segunda vía.
+
+## Correr
+
+```bash
+pnpm install
+pnpm dev        # http://localhost:4321
+pnpm build      # genera dist/ (sitio 100% estático)
+pnpm preview
+```
+
+## Credenciales
+
+No hay backend: el SDK de Azure Speech para JavaScript habla directo desde el
+navegador. Al abrir el juego, entrá a **⚙ Ajustes** y pegá tu
+`AZURE_SPEECH_KEY` y región (el tier gratis F0 alcanza). Todo se guarda en
+`localStorage`; la key nunca sale de tu navegador.
+
+El coach con IA (DeepSeek) es opcional, igual que en el escritorio: sin key se
+usan las pistas estáticas. Ojo: la API de DeepSeek puede rechazar pedidos
+hechos desde un navegador (CORS); si pasa, el juego degrada solo a las pistas
+estáticas, sin romper nada.
+
+## Arquitectura
+
+Se conserva la frontera de puertos y adaptadores del original:
+
+| Módulo | Espejo de | Responsabilidad |
+| --- | --- | --- |
+| `src/lib/scorer.ts` | `scorer.py` | **ÚNICO** punto que habla con Azure: assessment (once + continuo para el jefe) y TTS. |
+| `src/lib/coach.ts` | `coach.py` | **ÚNICO** punto que habla con DeepSeek (opcional, degrada a null). |
+| `src/lib/scoring.ts` | `scoring.py` | Regla de aprobado (estricta + near-miss), dominio puro. |
+| `src/lib/game.ts` | modelo de `app.py` | Targets, split de oraciones, teclas (`KEYS`), pistas de fonemas. |
+| `src/lib/progress.ts` | `progress.py` | XP / nivel / accuracy de por vida, en localStorage. |
+| `src/lib/config.ts` | `config.py` | Ajustes (en localStorage en lugar de `.env`). |
+| `src/lib/audio.ts` | `audio.py` | Mic test y reproducción local (getUserMedia / MediaRecorder). |
+| `src/components/PronunciationTetris.tsx` | UI de `app.py` | Máquina de estados + render. No sabe de Azure/DeepSeek. |
+
+Donde el escritorio usaba hilos + `queue` + `_poll`, acá alcanza con
+async/await (el SDK de JS no bloquea). Se conserva el contador `gen` que
+invalida trabajo asíncrono viejo tras un reset o cambio de objetivo.
+
+Notas de plataforma que se trasladan del original:
+
+- `recognizeOnceAsync` corta a ~15s → el jefe usa reconocimiento **continuo**
+  con corte por silencio prolongado (~3.5s), igual que `_recognize_continuous`.
+- La captura propia para "escuchá tu voz" (D) corre en paralelo con
+  MediaRecorder; si el navegador no deja, el scoring sigue y solo se pierde la
+  reproducción (mismo fallback que sounddevice → mic directo).
+- Ctrl+R es el reset del juego (se hace `preventDefault` para que no recargue
+  la página); Esc también resetea (acá no hay ventana que cerrar).

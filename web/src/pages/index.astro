@@ -1,0 +1,25 @@
+---
+import "@fontsource/silkscreen";
+import "@fontsource/atkinson-hyperlegible/400.css";
+import "@fontsource/atkinson-hyperlegible/700.css";
+import "../styles/global.css";
+import PronunciationTetris from "../components/PronunciationTetris";
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Pronunciation Tetris: juego de pronunciación de inglés. Pegá un párrafo, derrotá cada oración y al jefe final superando el umbral en CADA sonido (Azure Pronunciation Assessment)."
+    />
+    <title>Pronunciation Tetris</title>
+  </head>
+  <body>
+    {/* client:only — el juego usa mic, localStorage y el SDK de Azure: todo
+        del navegador, no tiene render de servidor que valga la pena. */}
+    <PronunciationTetris client:only="react" />
+  </body>
+</html>

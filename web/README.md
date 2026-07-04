@@ -5,6 +5,17 @@ Misma mecánica: pegás un párrafo, cada oración es un sub-jefe y el párrafo
 entero es el jefe final. Solo avanzás si **cada sonido** supera el umbral
 (94% por defecto), no el promedio; el near-miss es la segunda vía.
 
+**Diseño** (variante "3b — carril lateral", tema claro): el feedback por
+palabra va **inline en la oración** — las palabras bajo el umbral se resaltan
+con su score en superíndice, las omitidas con subrayado punteado, y las dichas
+de más se anotan aparte; clic en una palabra la reproduce. La ruta del párrafo
+vive en un **carril a la derecha** (✓ + mejor score por oración, clic navega;
+en pantallas angostas se abre como drawer). Las acciones son botones con su
+atajo de teclado como hint — el teclado (Espacio/F/D/S/A/R/X/Q/W/P/L) sigue
+mandando. La pantalla inicial (variante "1d") ofrece párrafo o imagen como
+entrada en dos cards lado a lado, con el micrófono, la prueba (chip "mic OK")
+y el botón Empezar en una misma barra.
+
 ## Correr
 
 ```bash
@@ -13,6 +24,11 @@ pnpm dev        # http://localhost:4321
 pnpm build      # genera dist/ (sitio 100% estático)
 pnpm preview
 ```
+
+**Modo demo**: `http://localhost:4321/?demo` reemplaza el scorer por un stub
+enlatado (`src/lib/demo.ts`): el primer intento con cada objetivo falla (con
+omisión e inserción incluidas) y el segundo pasa. Sirve para recorrer todo el
+juego —fail inline, práctica, pass, victoria— sin micrófono ni key de Azure.
 
 ## Credenciales
 
@@ -60,6 +76,8 @@ Se conserva la frontera de puertos y adaptadores del original:
 | `src/lib/progress.ts` | `progress.py` | XP / nivel / accuracy de por vida, en localStorage. |
 | `src/lib/config.ts` | `config.py` | Ajustes (en localStorage en lugar de `.env`). |
 | `src/lib/audio.ts` | `audio.py` | Mic test y reproducción local (getUserMedia / MediaRecorder). |
+| `src/lib/align.ts` | — | Alineación referencia ↔ palabras de Azure para el feedback inline (maneja omisiones, inserciones y puntuación; ante desync degrada a "sin resaltar", nunca a un resaltado corrido). |
+| `src/lib/demo.ts` | — | Scorer de mentira para el modo `?demo` (QA sin Azure). |
 | `src/components/PronunciationTetris.tsx` | UI de `app.py` | Máquina de estados + render. No sabe de Azure/DeepSeek. |
 
 Donde el escritorio usaba hilos + `queue` + `_poll`, acá alcanza con

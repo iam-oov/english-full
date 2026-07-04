@@ -1,21 +1,21 @@
-/** Regla de aprobado del juego — dominio puro. Espejo de `scoring.py`.
+/** The game's pass rule — pure domain. Mirror of `scoring.py`.
  *
- * Dos vías para derrotar un objetivo:
+ * Two ways to defeat a target:
  *
- *   REGLA 1 (estricta): TODOS los sonidos (los fonemas de una palabra, o las
- *     palabras de una oración/jefe) deben superar el umbral. NO el promedio.
+ *   RULE 1 (strict): ALL sounds (a word's phonemes, or a sentence/boss's
+ *     words) must clear the threshold. NOT the average.
  *
- *   REGLA 2 (near-miss): si el PROMEDIO quedó a no más de `nearMissMargin`
- *     puntos por DEBAJO del umbral Y el reconocedor escuchó el texto correcto,
- *     pasa igual. Solo rescata cuando el promedio quedó corto: si ya está
- *     arriba del umbral pero un sonido falló, gana la regla 1.
+ *   RULE 2 (near-miss): if the AVERAGE landed no more than `nearMissMargin`
+ *     points BELOW the threshold AND the recognizer heard the correct text,
+ *     it passes anyway. It only rescues when the average fell short: if it
+ *     is already above the threshold but one sound failed, rule 1 wins.
  */
 
 export interface Verdict {
   passed: boolean;
-  /** ganó por la 2da vía (near-miss), no por la estricta */
+  /** won via the 2nd way (near-miss), not the strict one */
   byRecognition: boolean;
-  /** sonido/palabra peor puntuada (null si no hay desglose) */
+  /** worst-scored sound/word (null if there is no breakdown) */
   worstLabel: string | null;
   worstScore: number;
 }

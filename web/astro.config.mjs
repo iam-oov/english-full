@@ -2,9 +2,9 @@
 import { defineConfig } from "astro/config";
 import react from "@astrojs/react";
 
-// Sitio 100% estático: el juego corre entero en el navegador (Azure Speech SDK
-// para JS habla directo con el servicio). No hay backend: las credenciales las
-// pone el jugador en Ajustes y viven en su localStorage.
+// 100% static site: the game runs entirely in the browser (Azure Speech SDK
+// for JS talks directly to the service). No backend: players set credentials
+// in Settings and they live in their localStorage.
 export default defineConfig({
   integrations: [react()],
 });

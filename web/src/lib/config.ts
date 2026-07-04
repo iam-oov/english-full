@@ -1,7 +1,8 @@
-/** Configuración del juego — espejo de `config.py`, adaptado al navegador.
+/** Game configuration — mirror of `config.py`, adapted to the browser.
  *
- * En el escritorio esto era un `.env`; acá los ajustes viven en localStorage
- * del jugador (la key de Azure nunca sale de su navegador, no hay backend).
+ * On desktop this was a `.env`; here the settings live in the player's
+ * localStorage (the Azure key never leaves their browser, there is no
+ * backend).
  */
 
 export interface Settings {
@@ -9,16 +10,16 @@ export interface Settings {
   speechRegion: string;
   targetLanguage: string;
   ttsVoice: string;
-  /** tono de la voz: '+10%', '-15%', '0%', 'high', 'low'... */
+  /** voice pitch: '+10%', '-15%', '0%', 'high', 'low'... */
   ttsPitch: string;
-  /** velocidad: '+0%', '-10%', 'slow', 'fast'... */
+  /** rate: '+0%', '-10%', 'slow', 'fast'... */
   ttsRate: string;
   passThreshold: number;
-  /** 2da vía para derrotar: promedio a <= margin del umbral + texto correcto. */
+  /** 2nd way to defeat: average within <= margin of threshold + correct text. */
   nearMissMargin: number;
-  /** Nivel CEFR del alumno (A1..C2): calibra los consejos del LLM. */
+  /** Student's CEFR level (A1..C2): calibrates the LLM tips. */
   cefrLevel: string;
-  /** DeepSeek (LLM) es OPCIONAL: sin key, pistas estáticas y listo. */
+  /** DeepSeek (LLM) is OPTIONAL: without a key, static hints and that's it. */
   deepseekKey: string;
   deepseekModel: string;
   deepseekBaseUrl: string;
@@ -53,7 +54,7 @@ export function loadSettings(): Settings {
     if (!raw) return { ...DEFAULT_SETTINGS };
     const data = JSON.parse(raw);
     if (typeof data !== "object" || data === null) return { ...DEFAULT_SETTINGS };
-    // Solo claves conocidas: un JSON viejo/futuro carga sin romper.
+    // Known keys only: an old/future JSON loads without breaking.
     const merged = { ...DEFAULT_SETTINGS } as Record<string, unknown>;
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       if (key in data && typeof data[key] === typeof merged[key]) {
@@ -70,6 +71,26 @@ export function saveSettings(s: Settings): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
   } catch {
-    // localStorage lleno o bloqueado: los ajustes duran solo esta sesión.
+    // localStorage full or blocked: the settings last only this session.
+  }
+}
+
+/** The last typed/imported paragraph persists in the browser: a refresh
+ * should not force you to type it again. */
+const PARAGRAPH_KEY = "pronunciation-tetris.paragraph";
+
+export function loadParagraph(): string {
+  try {
+    return localStorage.getItem(PARAGRAPH_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveParagraph(text: string): void {
+  try {
+    localStorage.setItem(PARAGRAPH_KEY, text);
+  } catch {
+    // cosmetic: if it can't be persisted, the game goes on the same
   }
 }

@@ -1,15 +1,15 @@
-/** OCR en el navegador (Tesseract.js) + limpieza del texto extraído.
+/** In-browser OCR (Tesseract.js) + cleanup of the extracted text.
  *
- * Puerto de entrada de imágenes: la UI le da una imagen y recibe texto listo
- * para segmentar en oraciones. Todo corre client-side (WASM); no hay backend
- * ni key nueva. Tesseract descarga su worker/wasm/datos de idioma de un CDN
- * la primera vez, así que la primera lectura necesita red.
+ * Image input port: the UI hands it an image and gets back text ready to
+ * segment into sentences. Everything runs client-side (WASM); no backend
+ * and no new key. Tesseract downloads its worker/wasm/language data from a
+ * CDN the first time, so the first read needs network access.
  *
- * El texto que sale de un OCR viene sucio: cortes de línea a mitad de
- * oración, palabras des-guionadas, números de página, encabezados.
- * `cleanOcrText` lo reconstruye en párrafos legibles; la división en
- * oraciones (sub-jefes) la hace después `splitSentences` de game.ts
- * (Intl.Segmenter) o el coach LLM si está configurado.
+ * Text coming out of an OCR is dirty: line breaks mid-sentence,
+ * de-hyphenated words, page numbers, headers.
+ * `cleanOcrText` rebuilds it into readable paragraphs; the split into
+ * sentences (sub-bosses) is done afterwards by `splitSentences` in game.ts
+ * (Intl.Segmenter) or by the LLM coach if configured.
  */
 
 export interface OcrResult {
@@ -22,8 +22,8 @@ export async function extractTextFromImage(
   onProgress?: (pct: number) => void,
 ): Promise<OcrResult> {
   try {
-    // Import dinámico: el bundle del juego no carga Tesseract (~varios MB de
-    // WASM) hasta que alguien realmente usa una imagen.
+    // Dynamic import: the game bundle doesn't load Tesseract (~several MB
+    // of WASM) until someone actually uses an image.
     const { createWorker } = await import("tesseract.js");
     const worker = await createWorker("eng", 1, {
       logger: (m) => {
@@ -45,10 +45,10 @@ export async function extractTextFromImage(
   }
 }
 
-/** Reconstruye el texto OCR en párrafos limpios:
- *  - des-guionado de fin de línea ("inter-\nesting" -> "interesting")
- *  - une las líneas cortadas de un mismo párrafo (bloques entre líneas vacías)
- *  - descarta basura sin letras (números de página, reglas, símbolos sueltos)
+/** Rebuilds the OCR text into clean paragraphs:
+ *  - end-of-line de-hyphenation ("inter-\nesting" -> "interesting")
+ *  - joins the broken lines of a same paragraph (blocks between empty lines)
+ *  - discards letterless junk (page numbers, rules, stray symbols)
  */
 export function cleanOcrText(raw: string): string {
   let text = raw.replace(/\r\n?/g, "\n");
@@ -64,8 +64,8 @@ export function cleanOcrText(raw: string): string {
         .replace(/\s+/g, " ")
         .trim(),
     )
-    // Un bloque válido tiene al menos un par de letras seguidas: afuera los
-    // "12", "---", "| |" que el OCR inventa en los bordes.
+    // A valid block has at least a couple of consecutive letters: out with
+    // the "12", "---", "| |" the OCR invents at the edges.
     .filter((block) => /\p{L}{2}/u.test(block) && block.length >= 3);
   return blocks.join("\n");
 }

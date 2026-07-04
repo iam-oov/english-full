@@ -1,15 +1,15 @@
-/** Adapter de Azure Speech (SDK de JavaScript): pronunciation assessment + TTS.
+/** Azure Speech adapter (JavaScript SDK): pronunciation assessment + TTS.
  *
- * Es la ÚNICA parte que habla con Azure — espejo de `scorer.py`. El resto del
- * juego pide "evaluá esto" y recibe un `Assessment` limpio; si mañana se cambia
- * el motor, solo se toca este archivo.
+ * This is the ONLY part that talks to Azure — mirror of `scorer.py`. The rest
+ * of the game asks "assess this" and gets a clean `Assessment` back; if the
+ * engine is swapped tomorrow, only this file changes.
  *
- * Diferencias con el escritorio, dictadas por el navegador:
- * - No hay hilos: el SDK de JS ya es asíncrono, así que `assess`/`speak`
- *   devuelven promesas y la UI simplemente las await-ea.
- * - La captura propia para "escuchá tu voz" usa getUserMedia + MediaRecorder
- *   en paralelo al mic del SDK (mismo rol que sounddevice + push stream en
- *   Python): si falla, el scoring sigue, solo se pierde la reproducción.
+ * Differences from desktop, dictated by the browser:
+ * - No threads: the JS SDK is already async, so `assess`/`speak` return
+ *   promises and the UI simply awaits them.
+ * - The own-voice capture for "hear your voice" uses getUserMedia +
+ *   MediaRecorder alongside the SDK's mic (same role as sounddevice + push
+ *   stream in Python): if it fails, scoring continues, only playback is lost.
  */
 
 import * as sdk from "microsoft-cognitiveservices-speech-sdk";
@@ -23,15 +23,15 @@ export type OnStatus = (code: StatusCode) => void;
 
 export interface AssessOptions {
   onStatus?: OnStatus;
-  /** deviceId del micrófono elegido; undefined = predeterminado del sistema */
+  /** deviceId of the chosen microphone; undefined = system default */
   deviceId?: string;
-  /** tolera pausas más largas entre palabras antes de cortar (oración/jefe) */
+  /** tolerates longer pauses between words before cutting off (sentence/boss) */
   longForm?: boolean;
-  /** reconocimiento CONTINUO, sin el tope de ~15s de recognizeOnce (jefe) */
+  /** CONTINUOUS recognition, without recognizeOnce's ~15s cap (boss) */
   continuous?: boolean;
 }
 
-/** Forma del JSON detallado que devuelve el servicio (NBest[0]). */
+/** Shape of the detailed JSON the service returns (NBest[0]). */
 interface RawWord {
   Word: string;
   PronunciationAssessment?: { AccuracyScore?: number; ErrorType?: string };
@@ -56,9 +56,9 @@ function parseWords(raw: RawWord[] | undefined): WordScore[] {
   });
 }
 
-/** Graba tu voz con MediaRecorder mientras Azure escucha, para poder
- * reproducirla después. Best-effort: si el navegador no deja, se devuelve
- * null y el scoring sigue igual. */
+/** Records your voice with MediaRecorder while Azure listens, so it can be
+ * played back later. Best-effort: if the browser refuses, it returns null
+ * and scoring continues as usual. */
 class OwnVoiceCapture {
   private recorder: MediaRecorder | null = null;
   private stream: MediaStream | null = null;
@@ -75,7 +75,7 @@ class OwnVoiceCapture {
       };
       this.recorder.start();
     } catch {
-      this.recorder = null; // sin captura propia: solo se pierde el playback
+      this.recorder = null; // no own-voice capture: only playback is lost
     }
   }
 
@@ -110,13 +110,13 @@ export class Scorer {
       this.settings.speechRegion,
     );
     config.speechRecognitionLanguage = this.settings.targetLanguage;
-    // Más paciencia para EMPEZAR a hablar (default ~5s): evita el "no te
-    // escuché" mientras el mic todavía se estaba conectando.
+    // More patience to START speaking (default ~5s): avoids the "didn't hear you"
+    // while the mic was still connecting.
     config.setProperty(
       sdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs,
       "15000",
     );
-    // Silencio que marca el FIN del habla: más margen en oraciones/párrafo.
+    // Silence that marks the END of speech: more slack for sentences/paragraph.
     config.setProperty(
       sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
       longForm ? "3000" : "1200",
@@ -141,8 +141,8 @@ export class Scorer {
       sdk.PronunciationAssessmentGranularity.Phoneme,
       true, // enableMiscue
     );
-    // IPA = la notación de los diccionarios (ð, ɪ, w...), más útil para
-    // aprender que el set SAPI por defecto (dh, ih, w...).
+    // IPA = the dictionaries' notation (ð, ɪ, w...), more useful for
+    // learning than the default SAPI set (dh, ih, w...).
     pronConfig.phonemeAlphabet = "IPA";
     pronConfig.applyTo(recognizer);
 
@@ -151,14 +151,14 @@ export class Scorer {
       recognizer.sessionStarted = () => onStatus("listening");
       recognizer.speechStartDetected = () => onStatus("speech");
       if (!opts.continuous) {
-        // En continuo el "processing" lo emitimos al cortar nosotros.
+        // In continuous mode we emit "processing" when we cut off ourselves.
         recognizer.speechEndDetected = () => onStatus("processing");
       }
     }
     return recognizer;
   }
 
-  /** Escucha el micrófono y evalúa la pronunciación contra referenceText. */
+  /** Listens to the microphone and assesses pronunciation against referenceText. */
   async assess(referenceText: string, opts: AssessOptions = {}): Promise<Assessment> {
     const capture = new OwnVoiceCapture();
     try {
@@ -189,8 +189,8 @@ export class Scorer {
     });
   }
 
-  /** Reconocimiento CONTINUO (para el jefe = párrafo entero). Acumula las
-   * frases reconocidas y corta tras ~3.5s de silencio prolongado. */
+  /** CONTINUOUS recognition (for the boss = the entire paragraph). Accumulates
+   * the recognized phrases and cuts off after ~3.5s of prolonged silence. */
   private recognizeContinuous(
     recognizer: sdk.SpeechRecognizer,
     referenceText: string,
@@ -202,7 +202,7 @@ export class Scorer {
       const fluencies: number[] = [];
       let cancelMsg: string | null = null;
       let spoke = false;
-      let last = performance.now(); // último momento con actividad de voz
+      let last = performance.now(); // last moment with voice activity
       const start = last;
 
       const finish = () => {
@@ -256,7 +256,7 @@ export class Scorer {
           if (fluency) fluencies.push(fluency);
           words.push(...parseWords(nbest.Words));
         } catch {
-          // frase sin desglose: se ignora, igual que en el escritorio
+          // phrase without a breakdown: ignored, same as on desktop
         }
       };
       recognizer.speechStartDetected = () => {
@@ -271,9 +271,9 @@ export class Scorer {
 
       const watchdog = setInterval(() => {
         const now = performance.now();
-        if (spoke && now - last > 3500) finish(); // terminaste de leer
-        else if (!spoke && now - start > 15000) finish(); // no empezaste a hablar
-        else if (now - start > 180000) finish(); // tope de seguridad
+        if (spoke && now - last > 3500) finish(); // you finished reading
+        else if (!spoke && now - start > 15000) finish(); // you never started speaking
+        else if (now - start > 180000) finish(); // safety cap
       }, 150);
 
       recognizer.startContinuousRecognitionAsync(
@@ -286,7 +286,7 @@ export class Scorer {
     });
   }
 
-  /** SSML con la voz, el TONO (pitch) y la VELOCIDAD (rate) configurados. */
+  /** SSML with the configured voice, PITCH and RATE. */
   private buildSsml(text: string): string {
     const safe = text
       .replace(/&/g, "&amp;")
@@ -301,15 +301,25 @@ export class Scorer {
     );
   }
 
-  /** Reproduce 'text' con voz neural ("escuchá cómo se dice").
-   * Devuelve un mensaje de error, o null si salió bien. La promesa se resuelve
-   * cuando TERMINA de sonar (SpeakerAudioDestination.onAudioEnd), para que la
-   * UI mantenga el 'busy' mientras suena, como en el escritorio. */
+  /** Plays 'text' with a neural voice ("hear how it's said").
+   * Returns an error message, or null on success. The promise resolves when
+   * playback FINISHES (SpeakerAudioDestination.onAudioEnd), so the UI keeps
+   * the 'busy' state while it plays, as on desktop. */
   speak(text: string): Promise<string | null> {
     return new Promise((resolve) => {
       let synthesizer: sdk.SpeechSynthesizer | null = null;
+      let fallback: ReturnType<typeof setTimeout> | null = null;
+      let settled = false;
       const done = (err: string | null) => {
-        synthesizer?.close();
+        // Idempotent: onAudioEnd, the fallback timer and the SDK callbacks race.
+        if (settled) return;
+        settled = true;
+        if (fallback) clearTimeout(fallback);
+        try {
+          synthesizer?.close();
+        } catch {
+          // already closed
+        }
         synthesizer = null;
         resolve(err);
       };
@@ -329,8 +339,14 @@ export class Scorer {
           (result) => {
             if (result.reason === sdk.ResultReason.Canceled) {
               done(`TTS cancelado. ${result.errorDetails ?? ""}`.trim());
+              return;
             }
-            // si salió bien, esperamos onAudioEnd para soltar el busy
+            // onAudioEnd doesn't fire reliably in every browser; without a
+            // fallback the game stays busy forever. audioDuration is in
+            // 100ns ticks; the margin absorbs playback start latency.
+            const playbackMs =
+              result.audioDuration > 0 ? result.audioDuration / 10_000 : 5000;
+            fallback = setTimeout(() => done(null), playbackMs + 1500);
           },
           (err) => done(`No pude reproducir el audio: ${err}`),
         );
@@ -340,7 +356,7 @@ export class Scorer {
     });
   }
 
-  /** Traducción del resultado crudo de Azure a nuestro Assessment. */
+  /** Translation of the raw Azure result into our Assessment. */
   private toAssessment(result: sdk.SpeechRecognitionResult): Assessment {
     if (result.reason === sdk.ResultReason.NoMatch) {
       return errorAssessment("No te escuché. Probá de nuevo.");

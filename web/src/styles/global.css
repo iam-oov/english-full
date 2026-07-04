@@ -1,7 +1,7 @@
-/* Pronunciation Tetris — tema claro editorial (rediseño "3b — Carril lateral").
- * El centro es para la oración con feedback inline; la ruta del párrafo vive
- * en un carril a la derecha. Atkinson Hyperlegible en todo (tipografía
- * diseñada para legibilidad: es un juego de LEER en voz alta). */
+/* Pronunciation Tetris — light editorial theme (redesign "3b — Side rail").
+ * Center is for the sentence with inline feedback; the paragraph route lives
+ * in a rail on the right. Atkinson Hyperlegible throughout (typography
+ * designed for readability: this is a READ-ALOUD game). */
 
 :root {
   --bg: #f5f6f8;
@@ -22,7 +22,7 @@
   --amber-soft: #fdf1dc;
 
   --body-font: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
-  /* Los fonemas muestran IPA: priorizar familias con buena cobertura. */
+  /* Phonemes display IPA: prioritize families with good coverage. */
   --ipa-font: "Atkinson Hyperlegible", "Noto Sans", "DejaVu Sans", sans-serif;
   --shadow-1: 0 1px 2px rgba(24, 32, 48, 0.05), 0 4px 16px rgba(24, 32, 48, 0.06);
 }
@@ -35,19 +35,22 @@ html,
 body {
   margin: 0;
   padding: 0;
-  min-height: 100vh;
+  height: 100%;
+  /* Platform does NOT scroll: only the text rail has its own scroll. */
+  overflow: hidden;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--body-font);
 }
 
 .pt-app {
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
-/* colores semánticos reutilizados por pill/feedback/scores */
+/* semantic colors reused by pill/feedback/scores */
 .c-green { color: var(--green); }
 .c-red { color: var(--red); }
 .c-amber { color: var(--amber); }
@@ -92,12 +95,13 @@ body {
 }
 .pt-umbral b { color: var(--ink); }
 .pt-gear {
+  display: inline-flex;
+  align-items: center;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
   color: var(--muted);
-  font-size: 15px;
-  padding: 3px 8px;
+  padding: 5px 8px;
   cursor: pointer;
 }
 .pt-gear:hover {
@@ -126,7 +130,7 @@ body {
   to { opacity: 0; transform: translateY(-9px); }
 }
 
-/* barra de destello bajo el header (pass verde / fail rojo) */
+/* flash bar under header (pass green / fail red) */
 .pt-flash {
   height: 3px;
   flex: none;
@@ -142,26 +146,103 @@ body {
   box-shadow: 0 1px 10px rgba(220, 38, 38, 0.45);
 }
 
-/* ------------------------------------------------------------ layout juego */
+/* ------------------------------------------------------------ game layout
+ * Fixed-height app: main fills the space between navbar and bottom bar;
+ * rail occupies 100% of that height, full-bleed (no outer padding). */
 .pt-main {
   flex: 1;
+  min-height: 0; /* obligatorio para que el carril pueda scrollear adentro */
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 290px;
-  gap: 28px;
-  width: min(1160px, 100%);
-  margin: 0 auto;
-  padding: 26px 24px 18px;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
+/* Hierarchy "4a": read → diagnose → practice, top to bottom.
+ * Stage aligns left; actions live in the bottom bar. */
 .pt-stage {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 16px;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden; /* stage doesn't scroll: content is sized to fit */
+  padding: 26px 40px 20px;
 }
 
-/* meta line: "ORACIÓN 3 DE 5 · INTENTO 2" + chips */
+/* READ: speaker + text */
+.pt-readrow {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+}
+.pt-readbody {
+  min-width: 0;
+  flex: 1;
+}
+.pt-speak {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  font-size: 15px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.pt-speak:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.pt-speak:disabled { opacity: 0.5; cursor: default; }
+
+/* row below sentence: your answer + caption + font zoom */
+.pt-subrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-left: 52px; /* aligned with the text (speaker width + gap) */
+  width: calc(100% - 52px);
+}
+/* small button variant (row below sentence) */
+.pt-btn.sm {
+  padding: 6px 13px;
+  font-size: 12.5px;
+  gap: 6px;
+}
+
+/* PRACTICE: action bar at bottom */
+.pt-actionbar {
+  width: 100%;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.ab-text {
+  min-width: 0;
+}
+.ab-title {
+  font-weight: 700;
+  font-size: 14.5px;
+}
+.ab-title.live {
+  animation: pt-pulse 1.4s ease-in-out infinite;
+}
+.ab-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+/* meta line: "SENTENCE 3 OF 5 · ATTEMPT 2" + chips */
 .pt-meta {
   display: flex;
   align-items: center;
@@ -177,6 +258,9 @@ body {
   text-transform: uppercase;
 }
 .pt-chip-amber {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: var(--amber-soft);
   color: var(--amber);
   font-size: 11px;
@@ -196,7 +280,7 @@ body {
   cursor: pointer;
 }
 
-/* pill de estado (semáforo de grabación / veredicto) */
+/* status pill (recording traffic light / verdict) */
 .pt-pillstatus {
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -210,18 +294,24 @@ body {
 .pt-pillstatus.fail-amber { border-color: var(--amber); background: var(--amber-soft); }
 .pt-pillstatus.fail-red { border-color: var(--red); background: var(--red-soft); }
 .pt-pillstatus.live { animation: pt-pulse 1.4s ease-in-out infinite; }
+/* compact variant: leads the diagnosis chips row */
+.pt-pillstatus.sm {
+  padding: 4px 13px;
+  font-size: 12.5px;
+  box-shadow: none;
+}
 @keyframes pt-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
 }
 
-/* ------------------------------------------------ oración con feedback inline */
+/* ------------------------------------------------ sentence with inline feedback */
 .pt-sentence {
   max-width: 46em;
   margin: 0;
   font-weight: 700;
   line-height: 1.65;
-  text-align: center;
+  text-align: left;
   color: var(--ink);
   overflow-wrap: anywhere;
 }
@@ -254,19 +344,20 @@ body {
   opacity: 0.85;
 }
 
-/* palabra grande + fonemas (modo práctica) */
+/* large word + phonemes (practice mode) */
 .pt-word-big {
   margin: 0;
   font-size: 44px;
   font-weight: 700;
   color: var(--ink);
-  text-align: center;
+  text-align: left;
 }
 .pt-phons {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
+  margin-top: 10px;
 }
 .pt-phon {
   font-family: var(--ipa-font);
@@ -290,23 +381,28 @@ body {
 .pt-caption {
   color: var(--dim);
   font-size: 12px;
-  text-align: center;
+  text-align: left;
 }
 .pt-feedback {
   color: var(--muted);
   font-size: 14px;
   max-width: 40em;
-  text-align: center;
+  text-align: left;
   line-height: 1.55;
 }
 .pt-feedback:empty { display: none; }
+/* la pantalla inicial y win siguen centradas */
+.pt-start .pt-feedback,
+.pt-single .pt-feedback {
+  text-align: center;
+}
 
-/* ---------------------------------------------------- chips "A practicar" */
+/* -------------------------------------------------- diagnostic row */
 .pt-chips {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
 }
 .pt-chips-label {
@@ -314,6 +410,9 @@ body {
   font-size: 12.5px;
 }
 .pt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: var(--red-soft);
   color: var(--red);
   border: none;
@@ -327,15 +426,10 @@ body {
 .pt-chip:hover { filter: brightness(0.96); }
 .pt-chip.chip-amber { background: var(--amber-soft); color: var(--amber); }
 .pt-chip.chip-clear { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+.pt-chip.chip-more { background: transparent; color: var(--muted); border: 1px dashed var(--border); }
+.pt-chip.chip-more:hover { color: var(--accent); border-color: var(--accent); }
 
-/* ------------------------------------------------------------ botonera */
-.pt-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-}
+/* ------------------------------------------------------------ botones */
 .pt-btn {
   display: inline-flex;
   align-items: center;
@@ -367,7 +461,7 @@ body {
   color: var(--green);
 }
 .pt-btn.success:hover:not(:disabled) { background: #d5f0e0; }
-/* consejo del coach (DeepSeek) */
+/* coach tip (DeepSeek) */
 .pt-coach {
   max-width: 40em;
   text-align: center;
@@ -386,20 +480,22 @@ body {
   font-weight: 700;
 }
 
-/* --------------------------------------------------------------- carril */
+/* --------------------------------------------------------------- rail
+ * Full-bleed panel: occupies 100% of main height (navbar to bottom bar),
+ * no outer padding; the ONLY scrollable area in the platform. */
 .pt-rail {
   background: var(--rail-bg);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px 12px;
-  align-self: start;
-  position: sticky;
-  top: 16px;
-  max-height: calc(100vh - 120px);
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0;
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 .pt-rail-h {
   color: var(--dim);
@@ -407,7 +503,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  padding: 0 8px 4px;
+  padding: 16px 16px 6px;
 }
 .pt-row {
   display: flex;
@@ -418,12 +514,12 @@ body {
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
-  border-radius: 9px;
+  border-radius: 0;
   font-family: var(--body-font);
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--muted);
-  padding: 8px 9px;
+  padding: 10px 14px;
   cursor: pointer;
 }
 .pt-row:hover { background: rgba(255, 255, 255, 0.75); }
@@ -437,11 +533,36 @@ body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.pt-row .row-mark { flex: none; font-weight: 700; }
+/* ordinal number: identifies each sentence; STATE goes in its color */
+.pt-row .row-num {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  margin-top: 1px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--dim);
+}
+.pt-row .row-num.done {
+  background: var(--green-soft);
+  border-color: transparent;
+  color: var(--green);
+}
+.pt-row .row-num.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+/* score color comes from the VALUE vs threshold (c-green/c-red inline),
+ * not from the row status: a skipped 96 must read green, a near-miss 91 red */
 .pt-row .row-score { flex: none; font-weight: 700; font-size: 11.5px; }
-.pt-row.done .row-mark, .pt-row.done .row-score { color: var(--green); }
 .pt-row.done .row-text { color: var(--muted); }
-.pt-row.failed .row-mark, .pt-row.failed .row-score { color: var(--red); }
 .pt-row.upcoming { color: var(--dim); }
 .pt-row.active {
   background: var(--surface);
@@ -450,7 +571,6 @@ body {
   color: var(--ink);
   font-weight: 700;
 }
-.pt-row.active .row-mark { color: var(--accent); }
 .pt-row .row-note {
   display: block;
   margin-top: 2px;
@@ -459,9 +579,9 @@ body {
   font-weight: 700;
 }
 .pt-row.boss .row-text { font-style: italic; }
-.pt-row.boss.upcoming .row-mark { color: var(--amber); }
+.pt-row.boss.upcoming .row-num { color: var(--amber); }
 
-/* drawer del carril (mobile) */
+/* rail drawer (mobile) */
 .pt-drawer-scrim {
   position: fixed;
   inset: 0;
@@ -473,33 +593,34 @@ body {
   top: 0;
   right: 0;
   bottom: 0;
+  height: auto;
   width: min(330px, 86vw);
-  max-height: none;
   border-radius: 14px 0 0 14px;
+  padding: 6px 0;
   z-index: 41;
   background: var(--surface);
 }
 
-/* --------------------------------------------------------------- footer */
-.pt-footer {
-  text-align: center;
+/* credit next to the brand in the navbar */
+.pt-credit {
   color: var(--dim);
   font-size: 11.5px;
-  padding: 10px 16px 16px;
+  font-weight: 400;
+  margin-left: 4px;
 }
-.pt-footer a {
+.pt-credit a {
   color: var(--muted);
   font-weight: 700;
   text-decoration: none;
 }
-.pt-footer a:hover {
+.pt-credit a:hover {
   color: var(--accent);
   text-decoration: underline;
 }
 
-/* ------------------------------------------------------- pantalla inicial
- * Eyebrow + título a la izquierda, cards altas sobre hoja blanca, barra del
- * micrófono como franja inferior de página. */
+/* ------------------------------------------------------- start screen
+ * Eyebrow + title on left, tall cards on white page, microphone bar
+ * as bottom page strip. */
 .pt-single {
   flex: 1;
   display: flex;
@@ -582,7 +703,7 @@ body {
 .pt-card-sub {
   color: var(--dim);
   font-size: 12px;
-  margin-top: -4px; /* pegado al label, como subtítulo */
+  margin-top: -4px; /* flush with label, like a subtitle */
 }
 .pt-entry {
   width: 100%;
@@ -605,7 +726,7 @@ body {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* dropzone de imagen (OCR) */
+/* image dropzone (OCR) */
 .pt-drop {
   align-items: center;
   justify-content: center;
@@ -647,7 +768,7 @@ body {
   max-width: 28em;
 }
 
-/* franja inferior de página: micrófono + prueba + empezar partida */
+/* bottom page strip: microphone + test + start game */
 .pt-start-footbar {
   width: 100%;
   background: var(--bg);
@@ -703,10 +824,21 @@ body {
   align-items: center;
   gap: 6px;
 }
+.pt-speak {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pt-coach {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.pt-coach svg { flex: none; align-self: center; }
 .pt-mic-test:hover:not(:disabled) { background: var(--bg); }
 .pt-mic-test:disabled { color: var(--dim); cursor: default; }
 
-/* --------------------------------------------------------------- victoria */
+/* --------------------------------------------------------------- victory */
 .pt-wincard {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -721,7 +853,7 @@ body {
   color: var(--ink);
 }
 
-/* ---------------------------------------------------------------- ajustes */
+/* ---------------------------------------------------------------- settings */
 .pt-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -791,6 +923,18 @@ body {
   border-color: var(--accent);
   background: var(--surface);
 }
+.pt-font-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pt-font-controls .font-val {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  min-width: 24px;
+  text-align: center;
+}
 .pt-modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -805,6 +949,7 @@ body {
   }
   .pt-rail:not(.drawer) { display: none; }
   .pt-rail-toggle { display: inline-flex; }
+  .pt-stage { padding: 18px 16px; }
 }
 @media (max-width: 760px) {
   .pt-start-grid { grid-template-columns: minmax(0, 1fr); }

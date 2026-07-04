@@ -1,26 +1,41 @@
-/** Pronunciation Tetris — port web del juego de escritorio (app.py).
+/** Pronunciation Tetris - web port of the desktop game (app.py).
  *
- * Pantalla inicial "1d": párrafo o imagen como entrada (cards lado a lado) y
- * micrófono + prueba + Empezar en una misma barra.
+ * Start screen "1d": paragraph or image as input (cards side by side) and
+ * microphone + test + Start in a single bar.
  *
- * Juego/práctica "3b — Carril lateral" (tema claro): el centro es para la oración
- * con el feedback POR PALABRA inline (resaltado + score en superíndice); la
- * ruta del párrafo vive en un carril a la derecha (clic navega); las acciones
- * son botones visibles con su atajo de teclado como hint.
+ * Game/practice "3b - Side rail" (light theme): the center is for the sentence
+ * with the PER-WORD feedback inline (highlight + superscript score); the
+ * paragraph's route lives in a rail on the right (click navigates); actions
+ * are visible buttons with their keyboard shortcut as a hint.
  *
- * Arquitectura: este componente es el equivalente de la clase App de tkinter.
- * Solo conoce los puertos (scorer/coach/audio/ocr/progress); nada de Azure acá.
+ * Architecture: this component is the equivalent of the tkinter App class.
+ * It only knows the ports (scorer/coach/audio/ocr/progress); no Azure here.
  *
- * Modelo de concurrencia: donde el escritorio usaba hilos + queue + _poll,
- * acá alcanza con async/await (el SDK de JS no bloquea). Se conserva el
- * contador `gen` que invalida trabajo async viejo (un consejo del coach o un
- * assessment que llega después de un reset se descarta).
+ * Concurrency model: where the desktop used threads + queue + _poll, here
+ * async/await is enough (the JS SDK doesn't block). We keep the `gen`
+ * counter that invalidates stale async work (a coach tip or an assessment
+ * arriving after a reset is discarded).
  *
- * Modo demo: con ?demo en la URL el scorer se reemplaza por un stub enlatado
- * (src/lib/demo.ts) — QA visual completo sin mic ni key de Azure.
+ * Demo mode: with ?demo in the URL the scorer is replaced by a canned stub
+ * (src/lib/demo.ts) - full visual QA without a mic or Azure key.
  */
 
 import { useEffect, useReducer, useRef } from "react";
+import {
+  ArrowRight,
+  Brain,
+  CornerUpLeft,
+  Crown,
+  Headphones,
+  Image as ImageIcon,
+  Mic,
+  RotateCcw,
+  Settings as SettingsIcon,
+  Upload,
+  Volume2,
+  X,
+  Zap,
+} from "lucide-react";
 
 import {
   KEYS,
@@ -38,7 +53,9 @@ import { judge } from "../lib/scoring";
 import { alignWords, type Alignment } from "../lib/align";
 import {
   DEFAULT_SETTINGS,
+  loadParagraph,
   loadSettings,
+  saveParagraph,
   saveSettings,
   settingsReady,
   type Settings,
@@ -63,6 +80,7 @@ import {
   type MicOption,
 } from "../lib/audio";
 import { cleanOcrText, extractTextFromImage } from "../lib/ocr";
+import { clearRun, loadRun, saveRun, type SavedRun } from "../lib/run";
 import { assessmentOk, weakWords, type Assessment } from "../lib/types";
 
 type Screen = "input" | "ready" | "recording" | "fail" | "pass" | "win";
@@ -74,38 +92,38 @@ interface UiText {
   tone: Tone;
 }
 
-/** ?demo en la URL: scorer de mentira para recorrer todo sin Azure. */
+/** ?demo in the URL: fake scorer to walk through everything without Azure. */
 const DEMO =
   typeof window !== "undefined" &&
   new URLSearchParams(window.location.search).has("demo");
 const demoScorer = createDemoScorer();
 
-/** Estado mutable del juego (el "self" de la App de tkinter). Vive en un ref y
- * cada mutación pide un re-render: las acciones del teclado leen siempre el
- * estado vivo, sin closures viejas. */
+/** Mutable game state (the "self" of the tkinter App). Lives in a ref and
+ * every mutation requests a re-render: keyboard actions always read the
+ * live state, no stale closures. */
 interface G {
   settings: Settings;
   stats: LifetimeStats;
   screen: Screen;
   busy: boolean;
-  /** override del texto del botón primario durante una operación (TTS, tu voz) */
+  /** primary-button text override during an operation (TTS, your voice) */
   busyLabel: string | null;
   targets: Target[];
   index: number;
   lastAudioUrl: string | null;
-  /** último resultado OK, para el feedback inline (null = sin desglose) */
+  /** last OK result, for the inline feedback (null = no breakdown) */
   lastAssessment: Assessment | null;
   micOptions: MicOption[];
-  /** deviceId elegido en el desplegable ("" = predeterminado) */
+  /** deviceId chosen in the dropdown ("" = default) */
   micSelected: string;
-  /** mic fijado al empezar la partida */
+  /** mic pinned when the game starts */
   micChosen: string | undefined;
   gen: number;
   totalAttempts: number;
   wordAttempts: number;
-  /** palabras a mejorar POR objetivo: targetId -> {palabra: cant_errores} */
+  /** words to improve PER target: targetId -> {word: error_count} */
   errors: Record<number, Record<string, number>>;
-  /** targetId -> "defeated" | "failed" (ausente = no intentado) */
+  /** targetId -> "defeated" | "failed" (absent = not attempted) */
   statusById: Record<number, "defeated" | "failed">;
   returnTargetId: number | null;
   practiceOriginId: number | null;
@@ -115,7 +133,7 @@ interface G {
   runXp: number;
   bestHp: Record<number, number>;
   fontDelta: number;
-  // --- feedback visual ---
+  // --- visual feedback ---
   badge: UiText & { live?: boolean };
   resultStyle: ResultStyle;
   feedback: UiText;
@@ -124,17 +142,19 @@ interface G {
   flashGen: number;
   xp: { amount: number; gen: number } | null;
   showSettings: boolean;
-  /** drawer del carril en pantallas angostas */
+  /** rail drawer on narrow screens */
   railOpen: boolean;
   paragraph: string;
-  /** la última prueba de mic anduvo (chip "mic OK" en la barra inicial) */
+  /** the last mic test worked ("mic OK" chip in the start bar) */
   micOk: boolean;
-  /** estado transitorio de la prueba de mic, mostrado EN la barra del mic */
+  /** transient mic-test status, shown IN the mic bar */
   micMsg: UiText | null;
-  /** estado del OCR (progreso/resultado), mostrado EN la card de imagen */
+  /** OCR status (progress/result), shown IN the image card */
   ocrMsg: UiText | null;
-  /** arrastrando una imagen sobre la dropzone */
+  /** dragging an image over the dropzone */
   dropHover: boolean;
+  /** diagnostic row: "+N light" chips expanded */
+  chipsOpen: boolean;
 }
 
 const initialG = (): G => ({
@@ -147,7 +167,7 @@ const initialG = (): G => ({
   index: 0,
   lastAudioUrl: null,
   lastAssessment: null,
-  micOptions: [{ label: "🎙 Predeterminado del sistema" }],
+  micOptions: [{ label: "System Default" }],
   micSelected: "",
   micChosen: undefined,
   gen: 0,
@@ -177,6 +197,7 @@ const initialG = (): G => ({
   micMsg: null,
   ocrMsg: null,
   dropHover: false,
+  chipsOpen: false,
 });
 
 const keyLabel = (action: keyof typeof KEYS): string => KEYS[action].toUpperCase();
@@ -206,6 +227,123 @@ export default function PronunciationTetris() {
   const bossIndex = (): number | null => {
     const i = G.targets.findIndex((t) => t.kind === "boss");
     return i >= 0 ? i : null;
+  };
+
+  /** Persist the in-progress run so a refresh restores it. State is saved
+   * positionally over the multiword targets (ids are runtime-only); practice
+   * drills are ephemeral and resolve to their origin sentence. */
+  const persistRun = () => {
+    if (!hasGame() || G.screen === "win" || G.screen === "recording") return;
+    const base = G.targets.filter(isMultiword);
+    const sentences = base
+      .filter((x) => x.kind === "sentence")
+      .map((x) => x.reference);
+    if (sentences.length === 0) return;
+    const cur = current();
+    const activeId = cur && isMultiword(cur) ? cur.id : G.practiceOriginId;
+    const drill = G.targets.filter((x) => G.practiceIds.includes(x.id));
+    const practice =
+      G.practiceOriginId !== null && drill.length > 0
+        ? {
+            origin: Math.max(
+              0,
+              base.findIndex((x) => x.id === G.practiceOriginId),
+            ),
+            words: drill.map((x) => x.reference),
+            pos:
+              cur && cur.kind === "word"
+                ? Math.max(0, drill.findIndex((x) => x.id === cur.id))
+                : 0,
+          }
+        : null;
+    saveRun({
+      sentences,
+      index: Math.max(0, base.findIndex((x) => x.id === activeId)),
+      status: base.map((x) => G.statusById[x.id] ?? null),
+      bestHp: base.map((x) => G.bestHp[x.id] ?? 0),
+      errors: base.map((x) => ({ ...(G.errors[x.id] ?? {}) })),
+      streak: G.streak,
+      combo: G.combo,
+      runXp: G.runXp,
+      totalAttempts: G.totalAttempts,
+      wordAttempts: G.wordAttempts,
+      screen: G.screen === "fail" || G.screen === "pass" ? G.screen : "ready",
+      assessment: G.lastAssessment
+        ? { ...G.lastAssessment, audioUrl: null }
+        : null,
+      badgeText: G.badge.text,
+      badgeTone: G.badge.tone,
+      resultStyle: G.resultStyle,
+      feedbackText: G.feedback.text,
+      feedbackTone: G.feedback.tone,
+      practice,
+    });
+  };
+
+  /** Rebuild a saved run. Returns false (and the caller discards it) if the
+   * saved arrays don't match the rebuilt targets (stale format). */
+  /** Rebuilds the saved run INCLUDING the post-attempt view (verdict pill,
+   * inline marks, feedback) and any active practice drill, so a refresh
+   * lands exactly where you were. Does NOT go through enterReady: that
+   * helper clears the very state being restored. */
+  const restoreRun = (saved: SavedRun): boolean => {
+    const targets = buildTargets(saved.sentences);
+    if (targets.length !== saved.status.length) return false;
+    G.statusById = {};
+    G.bestHp = {};
+    G.errors = {};
+    targets.forEach((x, i) => {
+      const st = saved.status[i];
+      if (st) G.statusById[x.id] = st;
+      const hp = saved.bestHp[i];
+      if (hp) G.bestHp[x.id] = hp;
+      const errs = saved.errors[i];
+      if (errs && Object.keys(errs).length > 0) G.errors[x.id] = { ...errs };
+    });
+
+    const p = saved.practice;
+    if (p && p.origin >= 0 && p.origin < targets.length && p.words.length > 0) {
+      const drill = p.words.map(makeWord);
+      G.practiceOriginId = targets[p.origin]!.id;
+      G.practiceIds = drill.map((d) => d.id);
+      G.targets = [
+        ...targets.slice(0, p.origin),
+        ...drill,
+        ...targets.slice(p.origin),
+      ];
+      G.index = p.origin + Math.min(Math.max(0, p.pos), drill.length - 1);
+    } else {
+      G.targets = targets;
+      G.index = Math.min(Math.max(0, saved.index), targets.length - 1);
+    }
+
+    G.streak = saved.streak;
+    G.combo = saved.combo;
+    G.runXp = saved.runXp;
+    G.totalAttempts = saved.totalAttempts;
+    G.wordAttempts = saved.wordAttempts;
+
+    const TONES: Tone[] = ["c-fg", "c-muted", "c-dim", "c-green", "c-red", "c-amber", "c-accent"];
+    const STYLES: ResultStyle[] = ["idle", "pass", "fail-amber", "fail-red"];
+    G.screen = saved.screen;
+    G.lastAssessment = saved.assessment
+      ? ({ ...(saved.assessment as Assessment), audioUrl: null } as Assessment)
+      : null;
+    G.badge = {
+      text: saved.badgeText,
+      tone: TONES.includes(saved.badgeTone as Tone) ? (saved.badgeTone as Tone) : "c-dim",
+    };
+    G.resultStyle = STYLES.includes(saved.resultStyle as ResultStyle)
+      ? (saved.resultStyle as ResultStyle)
+      : "idle";
+    G.feedback = {
+      text: saved.feedbackText,
+      tone: TONES.includes(saved.feedbackTone as Tone)
+        ? (saved.feedbackTone as Tone)
+        : "c-muted",
+    };
+    persistRun();
+    return true;
   };
 
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -247,7 +385,7 @@ export default function PronunciationTetris() {
     G.coach = { mode: "hidden", text: "" };
   };
 
-  // ---------------------------------------------------------- pantallas
+  // ------------------------------------------------------------ screens
   const showInput = () => {
     G.screen = "input";
     G.targets = [];
@@ -256,21 +394,24 @@ export default function PronunciationTetris() {
     G.resultStyle = "idle";
     clearAssessment();
     coachClear();
-    setFeedback("", "c-muted"); // el layout inicial ya explica cómo empezar
-    G.paragraph = "";
+    setFeedback("", "c-muted"); // the start layout already explains how to begin
+    // The paragraph persists in the browser: on return (win/reset/refresh)
+    // the last one is restored, to re-practice it without re-typing.
+    G.paragraph = loadParagraph();
     G.railOpen = false;
-    G.micMsg = null; // una prueba de mic vieja no aplica a la pantalla nueva
+    G.micMsg = null; // an old mic test doesn't apply to the new screen
     G.ocrMsg = null;
     rerender();
   };
 
   const reset = () => {
-    // Botón de pánico: descarta el juego. gen++ invalida cualquier trabajo
-    // async en curso (assessment/TTS/consejo que llegue tarde se descarta).
+    // Panic button: discards the game. gen++ invalidates any in-flight
+    // async work (a late assessment/TTS/tip is discarded).
     G.busy = false;
     G.busyLabel = null;
     G.lastAudioUrl = null;
     G.gen += 1;
+    clearRun();
     showInput();
   };
 
@@ -285,19 +426,21 @@ export default function PronunciationTetris() {
 
   const enterReady = () => {
     G.screen = "ready";
-    // Si salimos de las palabras de práctica, las quitamos para no ensuciar.
+    // If we leave the practice words, remove them to avoid clutter.
     const cur = current();
     if (G.practiceIds.length > 0 && cur && !G.practiceIds.includes(cur.id)) {
       cleanupPractice();
     }
-    G.gen += 1; // invalida consejos/resultados viejos
+    G.gen += 1; // invalidates stale tips/results
     G.wordAttempts = 0;
-    G.lastAudioUrl = null; // la grabación del objetivo anterior ya no aplica
+    G.lastAudioUrl = null; // previous target's recording no longer applies
+    G.chipsOpen = false; // expanded chips belong to previous target
     setBadge("", "c-dim");
     G.resultStyle = "idle";
     clearAssessment();
     coachClear();
     setFeedback("", "c-muted");
+    persistRun();
     rerender();
   };
 
@@ -309,7 +452,7 @@ export default function PronunciationTetris() {
     G.returnTargetId = null;
     G.practiceOriginId = null;
     G.practiceIds = [];
-    // Cada párrafo es una corrida nueva: los contadores RPG arrancan de cero.
+    // Each paragraph is a new run: RPG counters start from zero.
     G.streak = 0;
     G.combo = 0;
     G.runXp = 0;
@@ -321,7 +464,7 @@ export default function PronunciationTetris() {
 
   const win = () => {
     G.screen = "win";
-    // Único punto de escritura de la progresión: al ganar se persiste.
+    clearRun();
     G.stats = { ...G.stats, bestStreak: Math.max(G.stats.bestStreak, G.streak) };
     saveStats(G.stats);
     flash("green");
@@ -334,7 +477,7 @@ export default function PronunciationTetris() {
     rerender();
   };
 
-  // ------------------------------------------------------------- acciones
+  // ------------------------------------------------------------- actions
   const onStart = () => {
     if (G.busy || G.screen !== "input") return;
     if (!DEMO && !settingsReady(G.settings)) {
@@ -344,7 +487,7 @@ export default function PronunciationTetris() {
     }
     const sentences = splitSentences(G.paragraph.trim());
     if (sentences.length === 0) return;
-    G.micChosen = G.micSelected || undefined; // fijamos el mic elegido
+    G.micChosen = G.micSelected || undefined; // pin the chosen mic
     beginGame(sentences);
   };
 
@@ -356,10 +499,10 @@ export default function PronunciationTetris() {
 
   const onSpace = () => {
     if (G.busy) return;
-    if (G.screen === "input") return; // que el textarea maneje el espacio
+    if (G.screen === "input") return; // let the textarea handle the space
     if (G.screen === "win") return showInput();
     if (G.screen === "pass") return advance();
-    startRecording(); // ready o fail
+    startRecording(); // ready or fail
   };
 
   const onPrimary = () => {
@@ -376,14 +519,14 @@ export default function PronunciationTetris() {
           ? "Leé la oración completa, fuerte y claro."
           : "Decí la palabra UNA sola vez, fuerte y claro.";
     if (code === "listening") {
-      // Estado ACTIVO -> acento azul. El verde queda reservado SOLO para PASS.
-      setBadge("●  ¡HABLÁ AHORA!", "c-accent", true);
+      // ACTIVE state -> blue accent. Green is reserved for PASS ONLY.
+      setBadge("●  ¡Hablá ahora!", "c-accent", true);
       setFeedback(que, "c-muted");
     } else if (code === "speech") {
-      setBadge("🎤  Te escucho…", "c-accent", true);
+      setBadge("●  Te escucho…", "c-accent", true);
       setFeedback("Seguí. Callate al terminar para cerrar.", "c-muted");
     } else if (code === "processing") {
-      setBadge("⏳  Procesando…", "c-amber");
+      setBadge("Procesando…", "c-amber");
       setFeedback("Listo, dejá que Azure analice.", "c-muted");
     }
     rerender();
@@ -394,14 +537,14 @@ export default function PronunciationTetris() {
     if (!t) return;
     G.busy = true;
     G.screen = "recording";
-    G.gen += 1; // nueva grabación: invalida el consejo del intento anterior
+    G.gen += 1; // new recording: invalidates previous attempt's tip
     const myGen = G.gen;
     G.totalAttempts += 1;
     G.wordAttempts += 1;
     clearAssessment();
     coachClear();
-    // Semáforo: el mic todavía se está conectando, NO hables aún.
-    setBadge("⏳  Preparando micrófono…", "c-dim");
+    // Traffic light: mic is still connecting, do NOT speak yet.
+    setBadge("Preparando micrófono…", "c-dim");
     G.resultStyle = "idle";
     setFeedback("Esperá la luz azul. Todavía NO hables.", "c-dim");
     rerender();
@@ -423,11 +566,11 @@ export default function PronunciationTetris() {
 
   const failHint = (a: Assessment, multiword: boolean): string => {
     if (multiword) {
-      // El desglose vive INLINE en la oración; acá solo el resumen.
+      // Breakdown lives INLINE + chips + bar; here only what isn't there.
       if (weakWords(a, G.settings.passThreshold).length === 0) {
         return `Casi. Completaste ${a.completeness.toFixed(0)}%, fluidez ${a.fluency.toFixed(0)}%.`;
       }
-      return "Las resaltadas quedaron bajo el umbral: tocá una para oírla.";
+      return "";
     }
     const phons = a.words[0]?.phonemes ?? [];
     if (phons.length === 0) return "Casi. Afiná un poquito y de nuevo.";
@@ -443,7 +586,7 @@ export default function PronunciationTetris() {
     const phonemes: Array<[string, number]> = (a.words[0]?.phonemes ?? []).map(
       (p) => [p.phoneme, p.accuracy],
     );
-    const myGen = G.gen; // si cambia el contexto antes de que llegue, se descarta
+    const myGen = G.gen; // if context changes before arrival, it's discarded
     coach()
       .tip(
         t.reference,
@@ -464,43 +607,41 @@ export default function PronunciationTetris() {
     G.busy = false;
     const t = current();
     if (!t) return;
-    G.lastAudioUrl = a.audioUrl; // tu grabación, para reproducir con D
+    G.lastAudioUrl = a.audioUrl; // your recording, for playback with D
 
     if (!assessmentOk(a)) {
       G.screen = "fail";
-      G.streak = 0; // un fallo corta la racha y el combo
+      G.streak = 0; // failure cuts streak and combo
       G.combo = 0;
-      G.statusById[t.id] = "failed"; // intentado, no derrotado
-      setBadge("✕  —", "c-red");
+      G.statusById[t.id] = "failed"; // attempted, not defeated
+      setBadge(`✕  ${a.error ?? "Algo salió mal."}`, "c-red");
       G.resultStyle = "fail-red";
       clearAssessment();
       coachClear();
-      setFeedback(a.error ?? "Algo salió mal.", "c-muted");
+      setFeedback("", "c-muted"); // the pill already carries the error
       rerender();
       return;
     }
 
-    const heard = a.recognizedText ? `escuché: “${a.recognizedText}”` : "";
     const multiword = isMultiword(t);
     const threshold = G.settings.passThreshold;
-    G.lastAssessment = a; // alimenta el feedback inline (oración o fonemas)
+    G.lastAssessment = a; // feeds inline feedback (sentence or phonemes)
 
-    // Desglose para el JUICIO: por palabra (oración/párrafo) o por fonema.
+    // Breakdown for VERDICT: per word (sentence/paragraph) or per phoneme.
     let units: Array<[string, number]>;
     if (multiword) {
       units = a.words.map((w) => [w.word, w.accuracy]);
-      // Contador de errores por palabra: +1 a las que no llegan al umbral; las
-      // que SÍ llegan salen de la lista (ya las dominás). Base del modo R.
-      // Las INSERCIONES (dichas de más) no entran: no son palabras de la
-      // oración, drillearlas no tiene sentido. Sí siguen contando para el
-      // juicio (units), igual que en el escritorio.
+      // Per-word error counter: +1 for those below threshold; those that DO
+      // reach it leave the list (mastered). Basis of R mode. INSERTIONS
+      // (extra words) don't enter: they aren't sentence words, drilling them
+      // makes no sense. They DO count for verdict (units), same as desktop.
       const errs = curErrors();
       for (const w of a.words) {
         if (w.errorType.includes("Insertion")) continue;
         if (w.accuracy < threshold) errs[w.word] = (errs[w.word] ?? 0) + 1;
         else delete errs[w.word];
       }
-      // Combo: palabras PERFECTAS seguidas (>= max(umbral, 97)), cruza intentos.
+      // Combo: consecutive PERFECT words (>= max(threshold, 97)), spans attempts.
       const perfectBar = Math.max(threshold, 97);
       for (const [, score] of units) {
         G.combo = score >= perfectBar ? G.combo + 1 : 0;
@@ -509,10 +650,10 @@ export default function PronunciationTetris() {
       units = (a.words[0]?.phonemes ?? []).map((p) => [p.phoneme, p.accuracy]);
     }
 
-    // HP del objetivo = mejor accuracy lograda (se muestra en el carril).
+    // Target HP = best accuracy achieved (shown in rail).
     G.bestHp[t.id] = Math.max(G.bestHp[t.id] ?? 0, a.accuracy);
 
-    // Regla de aprobado (dominio puro en scoring.ts).
+    // Pass rule (pure domain in scoring.ts).
     const recognizedOk = normalizeText(a.recognizedText) === normalizeText(t.reference);
     const verdict = judge(units, {
       accuracy: a.accuracy,
@@ -521,8 +662,8 @@ export default function PronunciationTetris() {
       nearMissMargin: G.settings.nearMissMargin,
     });
 
-    // Capturamos el estado PREVIO: distingue una derrota nueva (da XP) de
-    // re-pasar algo ya derrotado (no farmea).
+    // Capture PREVIOUS status: distinguishes fresh defeat (grants XP)
+    // from re-passing something already defeated (no farming).
     const prevStatus = G.statusById[t.id];
     G.statusById[t.id] = verdict.passed ? "defeated" : "failed";
 
@@ -536,14 +677,14 @@ export default function PronunciationTetris() {
         xpFlash(XP_PER_DEFEAT);
       }
       flash("green");
-      setBadge(`✅  ${a.accuracy.toFixed(0)}%  ¡DERROTADA!`, "c-green");
+      setBadge(`✓ ¡Derrotada! · ${a.accuracy.toFixed(0)}%`, "c-green");
       G.resultStyle = "pass";
       if (verdict.byRecognition) {
         setFeedback(
-          `Cerca (≥ ${(threshold - G.settings.nearMissMargin).toFixed(0)}%) y te entendí perfecto. ✓  ${heard}`.trim(),
+          `Cerca (≥ ${(threshold - G.settings.nearMissMargin).toFixed(0)}%) y te entendí perfecto. ✓`,
         );
       } else {
-        setFeedback(`Todos los sonidos ≥ ${threshold.toFixed(0)}%.  ${heard}`.trim());
+        setFeedback(`Todos los sonidos ≥ ${threshold.toFixed(0)}%.`);
       }
       coachClear();
     } else {
@@ -551,23 +692,25 @@ export default function PronunciationTetris() {
       G.streak = 0;
       G.combo = 0;
       flash("red");
-      // Parcial (>= 40) -> ámbar; lejos (< 40) -> rojo.
+      // Partial (>= 40) -> amber; far off (< 40) -> red.
       const worstScore = verdict.worstLabel !== null ? verdict.worstScore : a.accuracy;
       const partial = worstScore >= 40;
       G.resultStyle = partial ? "fail-amber" : "fail-red";
-      const icon = partial ? "⚠" : "✕";
+      const icon = partial ? "△" : "✕";
       const tone: Tone = partial ? "c-amber" : "c-red";
-      if (verdict.worstLabel !== null) {
-        setBadge(
-          `${icon}  [${verdict.worstLabel}] ${verdict.worstScore.toFixed(0)}%`,
-          tone,
-        );
-      } else {
-        setBadge(`${icon}  ${a.accuracy.toFixed(0)}%`, tone);
-      }
+      const pending = multiword
+        ? worstWords().length
+        : units.filter(([, s]) => s < threshold).length;
+      const unit = multiword ? "palabra" : "sonido";
+      setBadge(
+        pending > 0
+          ? `${icon} Seguí practicando — te falta${pending > 1 ? "n" : ""} ${pending} ${unit}${pending > 1 ? "s" : ""}`
+          : `${icon} Casi (${a.accuracy.toFixed(0)}%) — afiná un poquito y reintentá`,
+        tone,
+      );
       const tip = failHint(a, multiword);
-      setFeedback(tip + (heard ? `   ·   ${heard}` : ""));
-      // Consejo de DeepSeek: solo en palabras sueltas (drill), a nivel fonema.
+      setFeedback(tip);
+      // DeepSeek tip: only on single words (drill), at phoneme level.
       if (coach().available && !multiword) {
         G.coach = { mode: "loading", text: "" };
         requestTip(a);
@@ -575,19 +718,20 @@ export default function PronunciationTetris() {
         coachClear();
       }
     }
+    persistRun();
     rerender();
   };
 
   const startTts = (text: string) => {
     G.busy = true;
-    G.busyLabel = "🔊 Reproduciendo…";
+    G.busyLabel = "Reproduciendo…";
     rerender();
     scorer()
       .speak(text)
       .then((err) => {
         G.busy = false;
         G.busyLabel = null;
-        if (G.screen === "input") return rerender(); // se reseteó: no pisar
+        if (G.screen === "input") return rerender(); // it was reset: don't clobber
         if (err) setFeedback(err, "c-red");
         rerender();
       });
@@ -616,7 +760,7 @@ export default function PronunciationTetris() {
       return;
     }
     G.busy = true;
-    G.busyLabel = "🔊 Reproduciendo TU voz…";
+    G.busyLabel = "Reproduciendo tu voz…";
     rerender();
     playRecording(G.lastAudioUrl).then((err) => {
       G.busy = false;
@@ -641,16 +785,18 @@ export default function PronunciationTetris() {
     const t = current();
     if (!actionable() || !t) return;
     G.errors[t.id] = {};
-    setFeedback("🧹 Lista de práctica reiniciada.", "c-dim");
+    setFeedback("Practice list reset.", "c-dim");
+    persistRun();
     rerender();
   };
 
   const onSkipToBoss = () => {
-    // A es un TOGGLE: si no estás en el jefe, vas al jefe (recordando de
-    // dónde); si ya estás, volvés a ese objetivo (o a la 1ra oración).
+    // A is a TOGGLE: if you're not at boss, go to boss
+    // (remember where from); if you already are, return to that
+    // target (or to 1st sentence).
     if (!actionable()) return;
     const bossIdx = bossIndex();
-    if (bossIdx === null) return; // párrafo de una sola oración
+    if (bossIdx === null) return; // single-sentence paragraph
     const t = current()!;
     if (t.kind === "boss") {
       const back = G.targets.findIndex((x) => x.id === G.returnTargetId);
@@ -677,7 +823,7 @@ export default function PronunciationTetris() {
     enterReady();
   };
 
-  /** Navegación directa desde el carril (clic en una fila). */
+  /** Direct navigation from the rail (click on a row). */
   const goToTarget = (id: number) => {
     if (!actionable()) return;
     const idx = G.targets.findIndex((x) => x.id === id);
@@ -688,24 +834,24 @@ export default function PronunciationTetris() {
   };
 
   const onPracticeWorst = () => {
-    // R: entrar/salir del modo práctica.
+    // R: enter/exit practice mode.
     if (!actionable()) return;
     const t = current()!;
-    // Si ya estoy drilleando (palabra) -> salir a la oración de origen.
+    // If already drilling (word) -> exit to origin sentence.
     if (t.kind === "word" && G.practiceOriginId !== null) {
       const idx = G.targets.findIndex((x) => x.id === G.practiceOriginId);
       if (idx >= 0) G.index = idx;
-      enterReady(); // al volver al origen, enterReady limpia
+      enterReady(); // returning to origin, enterReady cleans up
       return;
     }
     if (!isMultiword(t)) return;
     const worst = worstWords().map(([w]) => w);
     if (worst.length === 0) {
-      setFeedback("No hay palabras para practicar acá. Leé la oración primero.", "c-dim");
+      setFeedback("No words to practice here. Read the sentence first.", "c-dim");
       rerender();
       return;
     }
-    // Insertamos las palabras a practicar JUSTO antes del objetivo actual.
+    // Insert practice words RIGHT before current target.
     const practice = worst.map(makeWord);
     G.practiceOriginId = t.id;
     G.practiceIds = practice.map((p) => p.id);
@@ -725,23 +871,23 @@ export default function PronunciationTetris() {
   };
 
   const onMicTest = () => {
-    // Los mensajes van a G.micMsg: se muestran EN la barra del micrófono,
-    // al lado del botón Probar (no en el feedback general de la pantalla).
+    // Messages go to G.micMsg: shown IN the mic bar,
+    // next to Test button (not in general screen feedback).
     if (G.busy || G.screen !== "input") return;
     G.busy = true;
-    G.micMsg = { text: "🎙 Grabando 3 segundos… ¡decí algo!", tone: "c-accent" };
+    G.micMsg = { text: "● Grabando 3 segundos… ¡decí algo!", tone: "c-accent" };
     rerender();
     recordTest(G.micSelected || undefined, 3).then(async ({ url, error }) => {
-      refreshMics(); // el permiso recién dado desbloquea los nombres de mics
+      refreshMics(); // newly granted permission unlocks mic names
       if (error || !url) {
         G.busy = false;
         G.micOk = false;
-        G.micMsg = { text: `❌ ${error ?? "No se pudo grabar."}`, tone: "c-red" };
+        G.micMsg = { text: `✗ ${error ?? "No se pudo grabar."}`, tone: "c-red" };
         rerender();
         return;
       }
       if (G.screen === "input") {
-        G.micMsg = { text: "🔊 Reproduciendo… ¿te escuchás?", tone: "c-accent" };
+        G.micMsg = { text: "Reproduciendo… ¿te escuchás?", tone: "c-accent" };
         rerender();
       }
       const playErr = await playRecording(url);
@@ -749,48 +895,48 @@ export default function PronunciationTetris() {
       if (G.screen !== "input") return rerender();
       if (playErr) {
         G.micOk = false;
-        G.micMsg = { text: `❌ ${playErr}`, tone: "c-red" };
+        G.micMsg = { text: `✗ ${playErr}`, tone: "c-red" };
       } else {
-        G.micOk = true; // el chip "✓ mic OK" queda como confirmación persistente
+        G.micOk = true; // "✓ mic OK" chip stays as persistent confirmation
         G.micMsg = null;
       }
       rerender();
     });
   };
 
-  /** Imagen -> OCR -> limpieza -> oraciones (coach LLM si hay key, si no
-   * Intl.Segmenter). El resultado cae al textarea UNA oración por línea, así
-   * ves los sub-jefes y corregís lo que el OCR haya inventado antes de jugar. */
+  /** Image -> OCR -> cleanup -> sentences (coach LLM if key present,
+   * else Intl.Segmenter). Result lands in textarea ONE sentence per line, so
+   * you see sub-bosses and correct what OCR invented before playing. */
   const importImage = (file: File | Blob | null | undefined) => {
-    // Los mensajes van a G.ocrMsg: se muestran EN la card de imagen (la
-    // dropzone), donde está pasando la acción — no en un feedback general.
+    // Messages go to G.ocrMsg: shown IN image card (the
+    // dropzone), where action is happening - not in general feedback.
     if (!file || G.busy || G.screen !== "input") return;
     G.busy = true;
-    G.ocrMsg = { text: "🔍 Leyendo la imagen… 0%", tone: "c-accent" };
+    G.ocrMsg = { text: "Leyendo la imagen… 0%", tone: "c-accent" };
     rerender();
     extractTextFromImage(file, (pct) => {
       if (G.screen !== "input") return;
-      G.ocrMsg = { text: `🔍 Leyendo la imagen… ${pct}%`, tone: "c-accent" };
+      G.ocrMsg = { text: `Leyendo la imagen… ${pct}%`, tone: "c-accent" };
       rerender();
     }).then(async ({ text, error }) => {
       if (G.screen !== "input") {
         G.busy = false;
-        return rerender(); // se fue de la pantalla inicial: descartar
+        return rerender(); // left start screen: discard
       }
       if (error || !text) {
         G.busy = false;
         G.ocrMsg = {
-          text: `❌ ${error ?? "No encontré texto en la imagen."}`,
+          text: `✗ ${error ?? "No encontré texto en la imagen."}`,
           tone: "c-red",
         };
         return rerender();
       }
       const cleaned = cleanOcrText(text);
-      // Vía inteligente: el coach (DeepSeek) corrige errores de OCR y separa
-      // oraciones. Opcional y sin regresión: si falla, heurística local.
+      // Smart route: coach (DeepSeek) corrects OCR errors and splits
+      // sentences. Optional and no regression: if it fails, use local heuristic.
       let sentences: string[] | null = null;
       if (coach().available && cleaned) {
-        G.ocrMsg = { text: "🧠 Puliendo el texto con el coach…", tone: "c-accent" };
+        G.ocrMsg = { text: "Puliendo el texto con el coach…", tone: "c-accent" };
         rerender();
         sentences = await coach().smartSplit(cleaned);
       }
@@ -798,18 +944,19 @@ export default function PronunciationTetris() {
       G.busy = false;
       if (sentences.length === 0) {
         G.ocrMsg = {
-          text: "❌ No encontré oraciones legibles en la imagen.",
+          text: "✗ No encontré oraciones legibles en la imagen.",
           tone: "c-red",
         };
         return rerender();
       }
       G.paragraph = sentences.join("\n");
+      saveParagraph(G.paragraph); // extracted text also survives refresh
       const n = sentences.length;
       G.ocrMsg = {
         text:
           n > 1
-            ? `✅ Extraje ${n} oraciones → ${n} sub-jefes + 1 jefe final. Revisá el texto: el OCR a veces inventa.`
-            : "✅ Extraje 1 oración. Revisala antes de empezar.",
+            ? `✓ Extraje ${n} oraciones → ${n} sub-jefes + 1 jefe final. Revisá el texto: el OCR a veces inventa.`
+            : "✓ Extraje 1 oración. Revisala antes de empezar.",
         tone: "c-green",
       };
       rerender();
@@ -817,13 +964,13 @@ export default function PronunciationTetris() {
   };
 
   const bumpFont = (step: number) => {
-    // No actúa en la pantalla inicial: ahí P/L son letras que estás tipeando.
+    // Doesn't work on start screen: P/L are keys you're typing.
     if (!hasGame() || G.screen === "input") return;
     G.fontDelta = Math.max(-6, Math.min(16, G.fontDelta + step));
     rerender();
   };
 
-  // ------------------------------------------------------------- teclado
+  // ------------------------------------------------------------- keyboard
   const handleKey = (e: KeyboardEvent) => {
     if (G.showSettings) {
       if (e.key === "Escape") {
@@ -833,7 +980,7 @@ export default function PronunciationTetris() {
       return;
     }
     if (G.railOpen) {
-      // El drawer intercepta Escape ANTES del reset del juego.
+      // Drawer intercepts Escape BEFORE game reset.
       if (e.key === "Escape") {
         G.railOpen = false;
         rerender();
@@ -841,7 +988,7 @@ export default function PronunciationTetris() {
       return;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r") {
-      e.preventDefault(); // Ctrl+R es NUESTRO reset, no recargar la página
+      e.preventDefault(); // Ctrl+R is OUR reset, not reload page
       reset();
       return;
     }
@@ -856,7 +1003,7 @@ export default function PronunciationTetris() {
       el instanceof HTMLTextAreaElement ||
       el instanceof HTMLSelectElement;
     if (typing) {
-      // Shift+Enter en el textarea empieza; el resto lo maneja el propio input.
+      // Shift+Enter in textarea starts; rest is handled by input itself.
       if (e.key === "Enter" && e.shiftKey && el instanceof HTMLTextAreaElement) {
         e.preventDefault();
         onStart();
@@ -866,7 +1013,7 @@ export default function PronunciationTetris() {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "Escape") return reset();
     if (e.key === " ") {
-      e.preventDefault(); // que no scrollee ni re-dispare un botón enfocado
+      e.preventDefault(); // don't scroll or re-fire focused button
       onSpace();
       return;
     }
@@ -890,6 +1037,9 @@ export default function PronunciationTetris() {
   useEffect(() => {
     G.settings = loadSettings();
     G.stats = loadStats();
+    G.paragraph = loadParagraph();
+    const saved = loadRun();
+    if (saved && !restoreRun(saved)) clearRun();
     rerender();
     refreshMics();
     navigator.mediaDevices?.addEventListener?.("devicechange", refreshMics);
@@ -902,18 +1052,18 @@ export default function PronunciationTetris() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ------------------------------------------------------------ derivados
+  // ------------------------------------------------------------ derived
   const t = current();
   const inGame = hasGame() && G.screen !== "input" && G.screen !== "win";
   const threshold = G.settings.passThreshold;
 
-  /** Filas del carril: solo objetivos multiword (las palabras de drill no). */
+  /** Rail rows: only multiword targets (not drill words). */
   const rows = G.targets.filter(isMultiword);
-  /** Fila activa: la actual, o la oración de ORIGEN si estamos drilleando. */
+  /** Active row: current, or ORIGIN sentence if drilling. */
   const activeRailId =
     t === null ? null : isMultiword(t) ? t.id : G.practiceOriginId;
 
-  /** Alineación para el feedback inline (solo con assessment y multiword). */
+  /** Alignment for inline feedback (only with assessment and multiword). */
   const aligned: Alignment | null =
     t !== null && isMultiword(t) && G.lastAssessment !== null
       ? alignWords(t.reference, G.lastAssessment.words)
@@ -926,7 +1076,7 @@ export default function PronunciationTetris() {
     if (!t) return "";
     let base: string;
     if (t.kind === "boss") {
-      base = "👑 Jefe final";
+      base = "Jefe final";
     } else if (t.kind === "word") {
       const i = G.practiceIds.indexOf(t.id);
       base =
@@ -940,7 +1090,7 @@ export default function PronunciationTetris() {
     return `${base} · intento ${Math.max(1, G.wordAttempts)}`;
   };
 
-  /** Chip ámbar: cuántas unidades quedaron bajo el umbral en el último intento. */
+  /** Amber chip: how many units fell below threshold on last attempt. */
   const belowCount = (): number => {
     const a = G.lastAssessment;
     if (!a || !t || G.screen !== "fail") return 0;
@@ -959,7 +1109,7 @@ export default function PronunciationTetris() {
     return parts.join(" · ");
   };
 
-  /** Tamaño base de la oración según tipo/largo + zoom P/L. */
+  /** Base sentence size by type/length + zoom P/L. */
   const sentenceFontSize = (): number => {
     if (!t) return 24;
     let base: number;
@@ -974,19 +1124,46 @@ export default function PronunciationTetris() {
     return Math.max(floor, base + G.fontDelta);
   };
 
+  /** What the current target is, for bar text. */
+  const thingLabel = (): string =>
+    !t ? "" : t.kind === "boss" ? "el párrafo" : t.kind === "word" ? "la palabra" : "la oración";
+
   const primaryLabel = (): string => {
     if (G.busyLabel) return G.busyLabel;
     switch (G.screen) {
-      case "pass": return "➡  Siguiente";
-      case "fail": return "🎤  Reintentar";
-      default: return "🎤  Hablar ahora";
+      case "pass": return "Siguiente";
+      case "fail": return `Reintentar ${thingLabel().replace(/^(el|la) /, "")}`;
+      default: return "Hablar ahora";
     }
   };
+
+  /** Bottom action-bar text. Only for pre-attempt states: the READY
+   * instruction and recording traffic light. Post-attempt verdicts live
+   * in stage pill, next to sentence they talk about. */
+  const barContent = (): { title: string; cls: string; sub: string } => {
+    if (!t) return { title: "", cls: "c-fg", sub: "" };
+    if (G.screen === "recording") {
+      return {
+        title: G.badge.text,
+        cls: `${G.badge.tone}${G.badge.live ? " live" : ""}`,
+        sub: G.feedback.text,
+      };
+    }
+    if (G.screen !== "ready") return { title: "", cls: "c-fg", sub: "" };
+    const que =
+      t.kind === "boss"
+        ? "Leé TODO el párrafo, podés pausar entre oraciones."
+        : t.kind === "word"
+          ? "Decí la palabra UNA sola vez, fuerte y claro."
+          : "Leé la oración completa, fuerte y claro.";
+    return { title: "A leer", cls: "c-fg", sub: que };
+  };
+
 
   const railRows = (drawer: boolean) => (
     <>
       <div className="pt-rail-h">Párrafo</div>
-      {rows.map((target) => {
+      {rows.map((target, k) => {
         const st = G.statusById[target.id];
         const active = target.id === activeRailId;
         const cls = [
@@ -998,15 +1175,15 @@ export default function PronunciationTetris() {
         ]
           .filter(Boolean)
           .join(" ");
-        const mark = active
-          ? "▸"
-          : st === "defeated"
-            ? "✓"
-            : st === "failed"
-              ? "✗"
-              : target.kind === "boss"
-                ? "👑"
-                : "○";
+        // Number color: blue = current, green = defeated, gray = the rest.
+        // "Attempted but not defeated" is already implied by having a score;
+        // a red number next to a green score read as a contradiction.
+        const numCls = [
+          "row-num",
+          active ? "active" : st === "defeated" ? "done" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
         const score = G.bestHp[target.id];
         const note = !active
           ? null
@@ -1026,7 +1203,9 @@ export default function PronunciationTetris() {
               rerender();
             }}
           >
-            <span className="row-mark">{mark}</span>
+            <span className={numCls}>
+              {target.kind === "boss" ? <Crown size={11} /> : k + 1}
+            </span>
             <span className="row-text">
               {target.kind === "boss"
                 ? "Jefe final — el párrafo completo, de corrido"
@@ -1034,7 +1213,11 @@ export default function PronunciationTetris() {
               {note && <span className="row-note">{note}</span>}
             </span>
             {score !== undefined && score > 0 && (
-              <span className="row-score">{score.toFixed(0)}</span>
+              <span
+                className={`row-score ${score >= threshold ? "c-green" : "c-red"}`}
+              >
+                {score.toFixed(0)}
+              </span>
             )}
           </button>
         );
@@ -1042,7 +1225,6 @@ export default function PronunciationTetris() {
     </>
   );
 
-  const gameFooter = `Atajos: Espacio grabar · ${keyLabel("correct")} oración · ${keyLabel("mine")} tu voz · ${keyLabel("retry")} reintentar · ${keyLabel("practice")} practicar · ${keyLabel("clear")} limpiar · ${keyLabel("boss")} jefe · ${keyLabel("prev")}/${keyLabel("next")} navegar · ${keyLabel("fontUp")}/${keyLabel("fontDown")} fuente · Esc reset`;
 
   // -------------------------------------------------------------- render
   return (
@@ -1051,6 +1233,13 @@ export default function PronunciationTetris() {
         <div className="pt-brand">
           <span className="brand-dot" />
           Pronunciation Tetris
+          <span className="pt-credit">
+            · Construido por{" "}
+            <a href="https://github.com/iam-oov/" target="_blank" rel="noreferrer">
+              iam-oov
+            </a>{" "}
+            con 💛
+          </span>
         </div>
         <div className="pt-header-right">
           {chromeLine() && <span className="pt-chip-subtle">{chromeLine()}</span>}
@@ -1070,24 +1259,24 @@ export default function PronunciationTetris() {
               rerender();
             }}
           >
-            ⚙
+            <SettingsIcon size={16} />
           </button>
         </div>
       </header>
       <div className={`pt-flash ${G.flash}`} />
 
-      {/* ------------------------------------------------ pantalla inicial
-          Eyebrow "NUEVA PARTIDA" + título a la izquierda, cards altas
-          (párrafo | imagen) sobre una hoja blanca, y la barra del micrófono
-          como franja inferior de página con "Empezar partida". Misma
-          funcionalidad de siempre, solo cambia la composición. */}
+      {/* ------------------------------------------------ start screen
+          Eyebrow "NEW GAME" + title on left, tall cards
+          (paragraph | image) on white page, microphone bar
+          as bottom page strip with "Start game". Same functionality,
+          just different layout. */}
       {G.screen === "input" && (
         <>
           <div className="pt-start-sheet">
             <div className="pt-start">
-              {/* La progresión (nivel RPG por XP) solo se muestra si ya
-                  jugaste: "Level 1" en frío se lee como un selector de
-                  niveles que el juego no tiene. */}
+              {/* Progression (RPG level by XP) only shown if you've
+                  played before: "Level 1" cold reads as a level selector
+                  the game doesn't have. */}
               <div className="pt-eyebrow">
                 Nueva partida
                 {G.stats.targetsDefeated > 0 &&
@@ -1100,7 +1289,7 @@ export default function PronunciationTetris() {
               </p>
               {!DEMO && !settingsReady(G.settings) && (
                 <div className="pt-setup-card">
-                  <b>Faltan credenciales de Azure.</b> Abrí ⚙ Ajustes y completá
+                  <b>Faltan credenciales de Azure.</b> Abrí Ajustes y completá
                   tu <code>AZURE_SPEECH_KEY</code> y región. La key se guarda
                   solo en tu navegador (localStorage): no hay servidor en el
                   medio.
@@ -1108,7 +1297,7 @@ export default function PronunciationTetris() {
               )}
 
               <div className="pt-start-grid">
-                {/* card izquierda: pegar/escribir el párrafo */}
+                {/* left card: paste/type paragraph */}
                 <div className="pt-card">
                   <div className="pt-card-label">≣ Pegá un párrafo</div>
                   <div className="pt-card-sub">
@@ -1120,6 +1309,7 @@ export default function PronunciationTetris() {
                     placeholder="Escribí o pegá el texto acá…"
                     onChange={(e) => {
                       G.paragraph = e.target.value;
+                      saveParagraph(e.target.value);
                       rerender();
                     }}
                     onPaste={(e) => {
@@ -1135,7 +1325,7 @@ export default function PronunciationTetris() {
                   />
                 </div>
 
-                {/* card derecha: dropzone de imagen (OCR) */}
+                {/* right card: image dropzone (OCR) */}
                 <div
                   className={`pt-card pt-drop${G.dropHover ? " over" : ""}`}
                   onClick={() => !G.busy && fileInputRef.current?.click()}
@@ -1165,17 +1355,19 @@ export default function PronunciationTetris() {
                     style={{ display: "none" }}
                     onChange={(e) => {
                       importImage(e.target.files?.[0]);
-                      e.target.value = ""; // permite re-elegir la misma imagen
+                      e.target.value = ""; // allow re-choosing same image
                     }}
                   />
-                  <span className="drop-ico">🖼</span>
+                  <span className="drop-ico">
+                    <ImageIcon size={19} />
+                  </span>
                   <div className="drop-title">…o soltá una imagen</div>
                   <div className="drop-desc">
                     Extraemos el texto de la foto (apunte, libro, captura) y
                     armamos los sub-jefes por vos.
                   </div>
                   <button className="pt-mic-test" disabled={G.busy}>
-                    ⬆ Elegir archivo
+                    <Upload size={13} /> Elegir archivo
                   </button>
                   {G.ocrMsg && (
                     <div className={`drop-status ${G.ocrMsg.tone}`}>
@@ -1187,7 +1379,7 @@ export default function PronunciationTetris() {
             </div>
           </div>
 
-          {/* franja inferior: micrófono + prueba + empezar partida */}
+          {/* bottom strip: microphone + test + start game */}
           <div className="pt-start-footbar">
             <div className="footbar-inner">
               <span className="bar-label">Micrófono</span>
@@ -1206,7 +1398,7 @@ export default function PronunciationTetris() {
                 ))}
               </select>
               <button className="pt-mic-test" onClick={onMicTest} disabled={G.busy}>
-                🎧 Probar
+                <Headphones size={13} /> Probar
               </button>
               {G.micMsg ? (
                 <span className={`bar-msg ${G.micMsg.tone}`}>{G.micMsg.text}</span>
@@ -1220,14 +1412,14 @@ export default function PronunciationTetris() {
                 onClick={onPrimary}
                 disabled={G.busy}
               >
-                Empezar partida →
+                Empezar partida <ArrowRight size={15} />
               </button>
             </div>
           </div>
         </>
       )}
 
-      {/* --------------------------------------------------------- victoria */}
+      {/* --------------------------------------------------------- victory */}
       {G.screen === "win" && (
         <div className="pt-single">
           <div className="pt-wincard">
@@ -1235,215 +1427,277 @@ export default function PronunciationTetris() {
             <div className={`pt-feedback ${G.feedback.tone}`}>{G.feedback.text}</div>
           </div>
           <button className="pt-btn primary" tabIndex={-1} onClick={onPrimary}>
-            ↻ Otra vez
+            <RotateCcw size={14} /> Otra vez
           </button>
         </div>
       )}
 
-      {/* ----------------------------------------------------- juego/práctica */}
+      {/* ------------------------------------------- game/practice ("4a")
+          Vertical hierarchy: READ (sentence with speaker) → DIAGNOSE
+          (chips with overflow) → PRACTICE (action bar at bottom). */}
       {inGame && t && (
-        <div className="pt-main">
-          <section className="pt-stage">
-            {/* meta: ORACIÓN 3 DE 5 · INTENTO 2 + chips */}
-            <div className="pt-meta">
-              <span className="pt-meta-label">{metaLabel()}</span>
-              {belowCount() > 0 && (
-                <span className="pt-chip-amber">
-                  {belowCount()} {isMultiword(t) ? "palabras" : "sonidos"} bajo el umbral
-                </span>
-              )}
-              <button
-                className="pt-rail-toggle"
-                tabIndex={-1}
-                onClick={() => {
-                  G.railOpen = true;
-                  rerender();
-                }}
-              >
-                {t.kind === "boss" ? "👑" : `${rows.findIndex((r) => r.id === activeRailId) + 1}/${rows.length}`} ▾
-              </button>
-            </div>
-
-            {/* pill de estado: semáforo de grabación / veredicto */}
-            {G.badge.text && (
-              <div
-                className={`pt-pillstatus ${G.resultStyle !== "idle" ? G.resultStyle : ""} ${G.badge.tone}${G.badge.live ? " live" : ""}`}
-              >
-                {G.badge.text}
-              </div>
-            )}
-
-            {/* la oración (feedback inline) o la palabra + fonemas (práctica) */}
-            {t.kind === "word" ? (
-              <>
-                <p
-                  className="pt-word-big"
-                  style={{ fontSize: Math.max(20, 44 + G.fontDelta * 2) }}
+        <>
+          <div className="pt-main">
+            <section className="pt-stage">
+              {/* meta: SENTENCE 3 OF 5 · ATTEMPT 2 */}
+              <div className="pt-meta">
+                <span className="pt-meta-label">{metaLabel()}</span>
+                <button
+                  className="pt-rail-toggle"
+                  tabIndex={-1}
+                  onClick={() => {
+                    G.railOpen = true;
+                    rerender();
+                  }}
                 >
-                  {t.label}
-                </p>
-                {G.lastAssessment && (
-                  <div className="pt-phons">
-                    {(G.lastAssessment.words[0]?.phonemes ?? []).map((p, i) => (
-                      <span
-                        key={`${p.phoneme}-${i}`}
-                        className={`pt-phon${tokClass(p.accuracy)}`}
-                        style={{ animationDelay: `${Math.min(i * 25, 300)}ms` }}
+                  {t.kind === "boss" ? (
+                    <Crown size={11} />
+                  ) : (
+                    `${rows.findIndex((r) => r.id === activeRailId) + 1}/${rows.length}`
+                  )}{" "}
+                  ▾
+                </button>
+              </div>
+
+              {/* READ: speaker + sentence (inline) or word + phonemes */}
+              <div className="pt-readrow">
+                <button
+                  className="pt-speak"
+                  tabIndex={-1}
+                  onClick={onRepeat}
+                  disabled={G.busy}
+                  title={`Escuchar cómo se dice (${keyLabel("correct")})`}
+                >
+                  <Volume2 size={16} />
+                </button>
+                <div className="pt-readbody">
+                  {t.kind === "word" ? (
+                    <>
+                      <p
+                        className="pt-word-big"
+                        style={{ fontSize: Math.max(20, 44 + G.fontDelta * 2) }}
                       >
-                        {p.phoneme}
-                        <sup>{p.accuracy.toFixed(0)}</sup>
+                        {t.label}
+                      </p>
+                      {G.lastAssessment && (
+                        <div className="pt-phons">
+                          {(G.lastAssessment.words[0]?.phonemes ?? []).map((p, i) => (
+                            <span
+                              key={`${p.phoneme}-${i}`}
+                              className={`pt-phon${tokClass(p.accuracy)}`}
+                              style={{ animationDelay: `${Math.min(i * 25, 300)}ms` }}
+                            >
+                              {p.phoneme}
+                              <sup>{p.accuracy.toFixed(0)}</sup>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="pt-sentence" style={{ fontSize: sentenceFontSize() }}>
+                      {aligned
+                        ? aligned.tokens.map((tok, i) => (
+                          <span key={i}>
+                            {tok.prefix}
+                            {tok.score ? (
+                              <button
+                                className={`pt-tok${tok.omitted ? " omit" : tokClass(tok.score.accuracy)}`}
+                                tabIndex={-1}
+                                onClick={() => onWordClick(tok.clean)}
+                                title="Clic para oírla"
+                              >
+                                {tok.clean}
+                                {(tok.omitted || tok.score.accuracy < threshold) && (
+                                  <sup>
+                                    {tok.omitted ? "—" : tok.score.accuracy.toFixed(0)}
+                                  </sup>
+                                )}
+                              </button>
+                            ) : (
+                              tok.clean
+                            )}
+                            {tok.suffix}{" "}
+                          </span>
+                        ))
+                        : t.label}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* row below sentence: your answer + caption */}
+              <div className="pt-subrow">
+                <button
+                  className="pt-btn sm"
+                  tabIndex={-1}
+                  onClick={onPlayMine}
+                  disabled={G.busy || !G.lastAudioUrl}
+                  title={
+                    G.lastAudioUrl
+                      ? `Escuchar tu última grabación (${keyLabel("mine")})`
+                      : "Grabá primero para poder escucharte"
+                  }
+                >
+                  <Headphones size={13} /> Escuchar tu respuesta
+                </button>
+                {aligned && (
+                  <span className="pt-caption">
+                    clic en una palabra para oírla
+                    {aligned.insertions.length > 0 &&
+                      ` · dijiste de más: ${aligned.insertions.map((w) => w.word).join(", ")}`}
+                  </span>
+                )}
+              </div>
+
+              {/* while recording the instruction lives in the action bar */}
+              {G.screen !== "recording" && (
+                <div
+                  className={`pt-feedback ${G.feedback.tone}`}
+                  style={{ fontSize: Math.max(11, 14 + G.fontDelta) }}
+                >
+                  {G.feedback.text}
+                </div>
+              )}
+
+              {/* DIAGNOSE: verdict + top-3 words + overflow "+N leves". The
+                  verdict pill leads the row — it IS the diagnosis summary,
+                  so the old "N bajo el umbral" count chip became redundant. */}
+              {G.screen !== "recording" &&
+                (((G.screen === "pass" || G.screen === "fail") && G.badge.text) ||
+                  (isMultiword(t) && worstWords().length > 0)) && (
+                  <div className="pt-chips">
+                    {(G.screen === "pass" || G.screen === "fail") && G.badge.text && (
+                      <span
+                        className={`pt-pillstatus sm ${G.resultStyle !== "idle" ? G.resultStyle : "fail-red"} ${G.badge.tone}`}
+                      >
+                        {G.badge.text}
                       </span>
-                    ))}
+                    )}
+                    {isMultiword(t) && worstWords().length > 0 && (
+                      <>
+                        {(G.chipsOpen ? worstWords() : worstWords().slice(0, 3)).map(
+                          ([w, c]) => (
+                            <button
+                              key={w}
+                              className="pt-chip"
+                              tabIndex={-1}
+                              title="Clic para oírla"
+                              onClick={() => onWordClick(w)}
+                            >
+                              {w} ×{c}
+                            </button>
+                          ),
+                        )}
+                        {worstWords().length > 3 && (
+                          <button
+                            className="pt-chip chip-more"
+                            tabIndex={-1}
+                            onClick={() => {
+                              G.chipsOpen = !G.chipsOpen;
+                              rerender();
+                            }}
+                          >
+                            {G.chipsOpen
+                              ? "− menos"
+                              : `+${worstWords().length - 3} leves`}
+                          </button>
+                        )}
+                        <button
+                          className="pt-chip chip-clear"
+                          tabIndex={-1}
+                          onClick={onClearErrors}
+                        >
+                          <X size={11} /> limpiar
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
-              </>
-            ) : (
-              <p className="pt-sentence" style={{ fontSize: sentenceFontSize() }}>
-                {aligned
-                  ? aligned.tokens.map((tok, i) => (
-                    <span key={i}>
-                      {tok.prefix}
-                      {tok.score ? (
-                        <button
-                          className={`pt-tok${tok.omitted ? " omit" : tokClass(tok.score.accuracy)}`}
-                          tabIndex={-1}
-                          onClick={() => onWordClick(tok.clean)}
-                          title="🔊 clic para oírla"
-                        >
-                          {tok.clean}
-                          {(tok.omitted || tok.score.accuracy < threshold) && (
-                            <sup>
-                              {tok.omitted ? "—" : tok.score.accuracy.toFixed(0)}
-                            </sup>
-                          )}
-                        </button>
-                      ) : (
-                        tok.clean
-                      )}
-                      {tok.suffix}{" "}
-                    </span>
-                  ))
-                  : t.label}
-              </p>
-            )}
 
-            {/* caption bajo la oración */}
-            {aligned && (
-              <div className="pt-caption">
-                lo negro pasó el umbral · clic en una palabra para oírla
-                {aligned.insertions.length > 0 &&
-                  ` · dijiste de más: ${aligned.insertions.map((w) => w.word).join(", ")}`}
-              </div>
-            )}
+              {/* coach tip (DeepSeek) */}
+              {G.coach.mode !== "hidden" && (
+                <div className={`pt-coach${G.coach.mode === "shown" ? " shown" : ""}`}>
+                  <Brain size={13} />{" "}
+                  {G.coach.mode === "loading" ? "pensando un consejo…" : G.coach.text}
+                </div>
+              )}
 
-            <div
-              className={`pt-feedback ${G.feedback.tone}`}
-              style={{ fontSize: Math.max(11, 14 + G.fontDelta) }}
-            >
-              {G.feedback.text}
-            </div>
+            </section>
 
-            {/* chips "A practicar" */}
-            {isMultiword(t) && worstWords().length > 0 && G.screen !== "recording" && (
-              <div className="pt-chips">
-                <span className="pt-chips-label">A practicar:</span>
-                {worstWords()
-                  .slice(0, 8)
-                  .map(([w, c]) => (
+            {/* side rail: the paragraph route */}
+            <aside className="pt-rail">{railRows(false)}</aside>
+          </div>
+
+          {/* PRACTICE: action bar at bottom, content varies by state */}
+          <div className="pt-actionbar">
+            <div className="footbar-inner">
+              {barContent().title && (
+                <div className="ab-text">
+                  <div className={`ab-title ${barContent().cls}`}>
+                    {barContent().title}
+                  </div>
+                  {barContent().sub && (
+                    <div className="ab-sub">{barContent().sub}</div>
+                  )}
+                </div>
+              )}
+              <span className="bar-spacer" />
+              {G.screen !== "recording" && (
+                <>
+                  {t.kind === "word" && G.practiceOriginId !== null && (
                     <button
-                      key={w}
-                      className={`pt-chip${c === 1 ? " chip-amber" : ""}`}
+                      className="pt-btn"
                       tabIndex={-1}
-                      title="🔊 clic para oírla"
-                      onClick={() => onWordClick(w)}
+                      onClick={onPracticeWorst}
+                      disabled={G.busy}
                     >
-                      {w} ×{c}
+                      <CornerUpLeft size={14} /> Salir de práctica
                     </button>
-                  ))}
-                <button
-                  className="pt-chip chip-clear"
-                  tabIndex={-1}
-                  onClick={onClearErrors}
-                >
-                  ✕ limpiar
-                </button>
-              </div>
-            )}
-
-            {/* botonera */}
-            {G.screen !== "recording" && (
-              <div className="pt-actions">
-                <button
-                  className="pt-btn primary"
-                  tabIndex={-1}
-                  onClick={onPrimary}
-                  disabled={G.busy}
-                >
-                  {primaryLabel()}
-                </button>
-                {G.screen === "pass" && (
-                  <button className="pt-btn" tabIndex={-1} onClick={onRetry} disabled={G.busy}>
-                    ↺ Reintentar
-                  </button>
-                )}
-                <button className="pt-btn" tabIndex={-1} onClick={onRepeat} disabled={G.busy}>
-                  🔊 Escuchar {t.kind === "word" ? "palabra" : "oración"}
-                </button>
-                <button className="pt-btn" tabIndex={-1} onClick={onPlayMine} disabled={G.busy}>
-                  🎧 Escuchar tu respuesta
-                </button>
-                {t.kind === "word" && G.practiceOriginId !== null ? (
-                  <button
-                    className="pt-btn success"
-                    tabIndex={-1}
-                    onClick={onPracticeWorst}
-                    disabled={G.busy}
-                  >
-                    ↩ Salir de práctica
-                  </button>
-                ) : (
-                  isMultiword(t) &&
-                  worstWords().length > 0 && (
+                  )}
+                  {isMultiword(t) && worstWords().length > 0 && (
                     <button
                       className="pt-btn success"
                       tabIndex={-1}
                       onClick={onPracticeWorst}
                       disabled={G.busy}
                     >
-                      ⚡ Practicar {worstWords().length} palabra
+                      <Zap size={14} /> Practicar {worstWords().length} palabra
                       {worstWords().length > 1 ? "s" : ""}
                     </button>
-                  )
-                )}
-                {bossIndex() !== null && isMultiword(t) && (
+                  )}
+                  {G.screen === "pass" && (
+                    <button
+                      className="pt-btn"
+                      tabIndex={-1}
+                      onClick={onRetry}
+                      disabled={G.busy}
+                    >
+                      <RotateCcw size={14} /> Reintentar
+                    </button>
+                  )}
                   <button
-                    className="pt-btn"
+                    className="pt-btn primary"
                     tabIndex={-1}
-                    onClick={onSkipToBoss}
+                    onClick={onPrimary}
                     disabled={G.busy}
                   >
-                    {t.kind === "boss" ? "↩ Volver" : "👑 Ir al jefe"}
+                    {!G.busyLabel &&
+                      (G.screen === "pass" ? (
+                        <ArrowRight size={14} />
+                      ) : (
+                        <Mic size={14} />
+                      ))}
+                    {primaryLabel()}
                   </button>
-                )}
-              </div>
-            )}
-
-            {/* consejo del coach (DeepSeek) */}
-            {G.coach.mode !== "hidden" && (
-              <div className={`pt-coach${G.coach.mode === "shown" ? " shown" : ""}`}>
-                {G.coach.mode === "loading"
-                  ? "🧠 pensando un consejo…"
-                  : `🧠  ${G.coach.text}`}
-              </div>
-            )}
-          </section>
-
-          {/* carril lateral: la ruta del párrafo */}
-          <aside className="pt-rail">{railRows(false)}</aside>
-        </div>
+                </>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
-      {/* drawer del carril (pantallas angostas) */}
+      {/* rail drawer (narrow screens) */}
       {inGame && G.railOpen && (
         <div
           className="pt-drawer-scrim"
@@ -1458,23 +1712,14 @@ export default function PronunciationTetris() {
         </div>
       )}
 
-      <footer className="pt-footer">
-        {G.screen === "input" || G.screen === "win" ? (
-          <>
-            Construido por{" "}
-            <a href="https://github.com/iam-oov/" target="_blank" rel="noreferrer">
-              iam-oov
-            </a>{" "}
-            con 💛
-          </>
-        ) : (
-          gameFooter
-        )}
-      </footer>
-
       {G.showSettings && (
         <SettingsModal
           settings={G.settings}
+          fontDelta={G.fontDelta}
+          onFont={(step) => {
+            G.fontDelta = Math.max(-6, Math.min(16, G.fontDelta + step));
+            rerender();
+          }}
           onClose={() => {
             G.showSettings = false;
             rerender();
@@ -1491,9 +1736,11 @@ export default function PronunciationTetris() {
   );
 }
 
-// ---------------------------------------------------------------- ajustes
+// ---------------------------------------------------------------- settings
 function SettingsModal(props: {
   settings: Settings;
+  fontDelta: number;
+  onFont: (step: number) => void;
   onClose: () => void;
   onSave: (s: Settings) => void;
 }) {
@@ -1544,6 +1791,28 @@ function SettingsModal(props: {
           {field("Umbral de aprobado", "passThreshold", { type: "number" })}
           {field("Margen near-miss", "nearMissMargin", { type: "number" })}
           {field("Nivel CEFR", "cefrLevel", { placeholder: "A1…C2" })}
+          <div className="pt-field">
+            <label>Tamaño del texto</label>
+            <div className="pt-font-controls">
+              <button
+                className="pt-btn sm"
+                onClick={() => props.onFont(-2)}
+                title="Achicar el texto a leer"
+              >
+                A−
+              </button>
+              <span className="font-val">
+                {props.fontDelta > 0 ? `+${props.fontDelta}` : props.fontDelta}
+              </span>
+              <button
+                className="pt-btn sm"
+                onClick={() => props.onFont(+2)}
+                title="Agrandar el texto a leer"
+              >
+                A+
+              </button>
+            </div>
+          </div>
         </fieldset>
         <fieldset>
           <legend>Coach con IA (DeepSeek, opcional)</legend>

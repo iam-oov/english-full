@@ -1,8 +1,8 @@
-/** DTOs del resultado de evaluar una pronunciación — dominio puro, sin Azure.
+/** DTOs for the result of assessing a pronunciation — pure domain, no Azure.
  *
- * Espejo de `assessment.py`: el resto del juego habla en estos tipos y no sabe
- * que abajo hay un SDK en la nube. Si mañana se cambia el motor, solo se toca
- * `scorer.ts`.
+ * Mirror of `assessment.py`: the rest of the game speaks in these types and
+ * doesn't know there is a cloud SDK underneath. If the engine is swapped
+ * tomorrow, only `scorer.ts` changes.
  */
 
 export interface PhonemeScore {
@@ -20,18 +20,18 @@ export interface WordScore {
 
 export interface Assessment {
   recognizedText: string;
-  /** qué tan bien pronunciados los sonidos (0-100) */
+  /** how well the sounds were pronounced (0-100) */
   accuracy: number;
-  /** score global combinado (0-100) */
+  /** combined overall score (0-100) */
   pronunciation: number;
-  /** cuánto del texto objetivo dijiste (0-100) */
+  /** how much of the target text you said (0-100) */
   completeness: number;
-  /** fluidez/ritmo (0-100) */
+  /** fluency/rhythm (0-100) */
   fluency: number;
   words: WordScore[];
-  /** mensaje si algo salió mal (no hubo voz, credenciales, etc.) */
+  /** message if something went wrong (no voice, credentials, etc.) */
   error: string | null;
-  /** URL (objectURL) con lo que dijiste, para reproducir */
+  /** URL (objectURL) with what you said, for playback */
   audioUrl: string | null;
 }
 

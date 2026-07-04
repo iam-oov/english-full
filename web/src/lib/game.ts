@@ -1,19 +1,19 @@
-/** Modelo de juego — dominio puro. Espejo del modelo de `app.py`.
+/** Game model — pure domain. Mirror of the `app.py` model.
  *
- * Tipos de objetivo:
- *   "sentence" -> sub-jefe: una oración del párrafo (se evalúa por palabra)
- *   "boss"     -> jefe final: el párrafo completo (reconocimiento continuo)
- *   "word"     -> palabra suelta (solo en el modo práctica con R)
+ * Target kinds:
+ *   "sentence" -> sub-boss: one paragraph sentence (scored per word)
+ *   "boss"     -> final boss: the whole paragraph (continuous recognition)
+ *   "word"     -> single word (only in practice mode via R)
  */
 
 export type Kind = "sentence" | "boss" | "word";
 
 export interface Target {
-  /** id estable: reemplaza el `id(Target)` de Python para indexar estado */
+  /** stable id: replaces Python's `id(Target)` for indexing state */
   id: number;
-  /** lo que se muestra grande */
+  /** what is displayed big */
   label: string;
-  /** el texto que Azure evalúa */
+  /** the text Azure evaluates */
   reference: string;
   kind: Kind;
 }
@@ -30,29 +30,29 @@ export const makeWord = (w: string): Target => ({
   id: nextTargetId++, label: w, reference: w, kind: "word",
 });
 
-/** Se evalúa por palabra (oración o jefe), no por fonema. */
+/** Scored per word (sentence or boss), not per phoneme. */
 export const isMultiword = (t: Target): boolean =>
   t.kind === "sentence" || t.kind === "boss";
 
-/** Tolera pausas largas entre palabras al reconocer (oración/jefe). */
+/** Tolerates long pauses between words while recognizing (sentence/boss). */
 export const isLongForm = isMultiword;
 
-/** Reconocimiento CONTINUO (sin tope de ~15s): el jefe = párrafo entero. */
+/** CONTINUOUS recognition (no ~15s cap): the boss = the entire paragraph. */
 export const isContinuous = (t: Target): boolean => t.kind === "boss";
 
-/** Divide un párrafo en oraciones. Un salto de línea SIEMPRE es frontera
- * (una línea = una oración, como en el escritorio); dentro de cada línea
- * segmenta con Intl.Segmenter + re-unión de abreviaturas, en vez del split
- * naïf por '.'. Así "Mr. Smith arrived." o "Meet at 5 p.m. today." quedan
- * como UNA oración. */
+/** Splits a paragraph into sentences. A newline is ALWAYS a boundary
+ * (one line = one sentence, as on desktop); within each line it segments
+ * with Intl.Segmenter + abbreviation re-joining, instead of the naive
+ * split on '.'. So "Mr. Smith arrived." or "Meet at 5 p.m. today." stay
+ * as ONE sentence. */
 export function splitSentences(text: string): string[] {
   return text.split("\n").flatMap(segmentLine);
 }
 
-/** Un segmento que termina en abreviatura NO cierra la oración: se re-une con
- * el siguiente. El ICU de los navegadores segmenta sin lista de supresiones
- * (corta en "Mr."), así que la ponemos nosotros. `\b\p{L}\.` cubre iniciales
- * y siglas con puntos ("J.", "U.S.", "p.m."). */
+/** A segment ending in an abbreviation does NOT close the sentence: it is
+ * re-joined with the next one. Browsers' ICU segments without a suppression
+ * list (it breaks at "Mr."), so we supply it ourselves. `\b\p{L}\.` covers
+ * initials and dotted acronyms ("J.", "U.S.", "p.m."). */
 const ABBREV_END =
   /(?:\b(?:mr|mrs|ms|dr|prof|st|sr|jr|vs|etc|no|approx)|\b\p{L})\.$/iu;
 
@@ -75,7 +75,7 @@ function segmentLine(line: string): string[] {
       .filter(Boolean);
     if (parts.length > 0) return parts;
   } catch {
-    // navegador sin Intl.Segmenter: caer al split clásico por '.'
+    // browser without Intl.Segmenter: fall back to the classic split on '.'
   }
   return trimmed
     .split(".")
@@ -83,16 +83,16 @@ function segmentLine(line: string): string[] {
     .filter(Boolean);
 }
 
-/** El punto final no forma parte del sub-jefe (igual que el split clásico);
- * '?' y '!' sí se conservan (cambian la entonación que se practica). */
+/** The trailing period is not part of the sub-boss (same as the classic
+ * split); '?' and '!' ARE kept (they change the intonation being practiced). */
 const stripTrailingDot = (s: string): string => s.replace(/\.+$/, "").trim();
 
-/** Sub-jefes (oraciones) + jefe final (párrafo, solo si hay más de una oración). */
+/** Sub-bosses (sentences) + final boss (paragraph, only if there is more than one sentence). */
 export function buildTargets(sentences: string[]): Target[] {
   const targets = sentences.map(makeSentence);
   if (sentences.length > 1) {
-    // Reconstrucción limpia: cada oración cierra con su propia puntuación
-    // (o un '.' si no trae), sin duplicar el "?." / "!.".
+    // Clean reconstruction: each sentence closes with its own punctuation
+    // (or a '.' if it has none), without duplicating the "?." / "!.".
     const paragraph = sentences
       .map((s) => (/[.!?…]$/.test(s) ? s : `${s}.`))
       .join(" ");
@@ -101,8 +101,8 @@ export function buildTargets(sentences: string[]): Target[] {
   return targets;
 }
 
-/** Normaliza para comparar lo reconocido vs el objetivo: minúsculas, sin
- * puntuación, espacios colapsados. 'Entered.' == 'entered'. */
+/** Normalizes to compare what was recognized vs the target: lowercase, no
+ * punctuation, collapsed whitespace. 'Entered.' == 'entered'. */
 export function normalizeText(text: string): string {
   return text
     .toLowerCase()
@@ -112,25 +112,25 @@ export function normalizeText(text: string): string {
     .join(" ");
 }
 
-/** ÚNICA fuente de verdad de las teclas de acción. Cambiás la letra acá y se
- * actualiza en los bindings y en todas las pistas en pantalla. */
+/** SINGLE source of truth for the action keys. Change the letter here and it
+ * updates in the bindings and in every on-screen hint. */
 export const KEYS = {
-  correct: "f", // escuchá la pronunciación CORRECTA (TTS de Azure)
-  mine: "d", // escuchá TU voz (tu última grabación)
-  retry: "s", // reintentar (incluso si ya la derrotaste)
-  boss: "a", // toggle: ir al jefe final / volver
-  practice: "r", // practicar las palabras con más errores del objetivo
-  clear: "x", // reiniciar la lista de palabras a practicar del objetivo
-  prev: "q", // navegar al sub-jefe/jefe ANTERIOR
-  next: "w", // navegar al sub-jefe/jefe SIGUIENTE
-  fontUp: "p", // agrandar la fuente del texto a leer
-  fontDown: "l", // achicar la fuente
+  correct: "f", // hear the CORRECT pronunciation (Azure TTS)
+  mine: "d", // hear YOUR voice (your latest recording)
+  retry: "s", // retry (even if you already defeated it)
+  boss: "a", // toggle: go to the final boss / come back
+  practice: "r", // practice the target's most-missed words
+  clear: "x", // reset the target's practice-word list
+  prev: "q", // navigate to the PREVIOUS sub-boss/boss
+  next: "w", // navigate to the NEXT sub-boss/boss
+  fontUp: "p", // enlarge the reading-text font
+  fontDown: "l", // shrink the font
 } as const;
 
 export type KeyAction = keyof typeof KEYS;
 
-/** Pistas para los sonidos del inglés que más cuestan a un hispanohablante.
- * Clave = fonema IPA que devuelve Azure. */
+/** Hints for the English sounds that Spanish speakers struggle with most.
+ * Key = IPA phoneme returned by Azure. */
 const PHONEME_HINTS: Record<string, string> = {
   "ð": "el 'th' SUAVE de THIS/THE (lengua entre los dientes, CON voz)",
   "θ": "el 'th' FUERTE de THINK/BATH (lengua entre los dientes, SIN voz)",
@@ -162,7 +162,7 @@ const PHONEME_HINTS: Record<string, string> = {
   "oʊ": "el diptongo 'ou' de GO/HOME",
 };
 
-/** Pista para un fonema IPA; tolera marcas de longitud (ː) y variantes. */
+/** Hint for an IPA phoneme; tolerates length marks (ː) and variants. */
 export function phonemeHint(phoneme: string): string | null {
   return (
     PHONEME_HINTS[phoneme] ?? PHONEME_HINTS[phoneme.replace(/ː/g, "")] ?? null

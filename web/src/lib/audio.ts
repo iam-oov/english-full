@@ -1,17 +1,17 @@
-/** Audio LOCAL (sin Azure): probar el micrófono y reproducir grabaciones.
- * Espejo de `audio.py` (sounddevice + aplay) con las APIs del navegador. */
+/** LOCAL audio (no Azure): testing the microphone and playing recordings.
+ * Mirror of `audio.py` (sounddevice + aplay) using the browser APIs. */
 
 export interface MicOption {
   label: string;
-  /** deviceId del navegador; undefined = predeterminado del sistema */
+  /** browser deviceId; undefined = system default */
   deviceId?: string;
 }
 
-/** Lista los micrófonos de entrada. El navegador solo muestra los nombres
- * después de que el usuario dio permiso; antes de eso queda solo el
- * predeterminado (permission-gating de getUserMedia). */
+/** Lists the input microphones. The browser only exposes the names after
+ * the user grants permission; before that only the default remains
+ * (getUserMedia permission-gating). */
 export async function listMicrophones(): Promise<MicOption[]> {
-  const options: MicOption[] = [{ label: "🎙 Predeterminado del sistema" }];
+  const options: MicOption[] = [{ label: "Predeterminado del sistema" }];
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const seen = new Set<string>();
@@ -22,12 +22,12 @@ export async function listMicrophones(): Promise<MicOption[]> {
       options.push({ label: device.label, deviceId: device.deviceId });
     }
   } catch {
-    // sin enumerateDevices: queda solo el predeterminado
+    // no enumerateDevices: only the default remains
   }
   return options;
 }
 
-/** Pide permiso de mic (y de paso desbloquea los labels de enumerateDevices). */
+/** Requests mic permission (and unlocks the enumerateDevices labels as a bonus). */
 export async function requestMicPermission(): Promise<boolean> {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -38,8 +38,8 @@ export async function requestMicPermission(): Promise<boolean> {
   }
 }
 
-/** Graba `seconds` del mic elegido y devuelve una URL reproducible, o un
- * mensaje de error. Es la prueba de mic (Ctrl+T / botón Probar). */
+/** Records `seconds` from the chosen mic and returns a playable URL, or an
+ * error message. This is the mic test (Ctrl+T / "Probar" button). */
 export function recordTest(
   deviceId: string | undefined,
   seconds = 3,
@@ -73,13 +73,25 @@ export function recordTest(
   });
 }
 
-/** Reproduce una grabación (objectURL). Devuelve un error o null si salió bien.
- * La promesa se resuelve cuando TERMINA de sonar. */
+/** Plays a recording (objectURL). Returns an error, or null on success.
+ * The promise resolves when playback FINISHES. */
 export function playRecording(url: string): Promise<string | null> {
   return new Promise((resolve) => {
+    let settled = false;
+    const done = (err: string | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(err);
+    };
     const audio = new Audio(url);
-    audio.onended = () => resolve(null);
-    audio.onerror = () => resolve("No pude reproducir la grabación.");
-    audio.play().catch((exc) => resolve(`No pude reproducir: ${String(exc)}`));
+    audio.onended = () => done(null);
+    audio.onerror = () => done("No pude reproducir la grabación.");
+    audio.onloadedmetadata = () => {
+      // MediaRecorder blobs may never fire `ended` (webm reports Infinity
+      // duration); without this fallback the caller stays busy forever.
+      const ms = Number.isFinite(audio.duration) ? audio.duration * 1000 : 15000;
+      setTimeout(() => done(null), ms + 2000);
+    };
+    audio.play().catch((exc) => done(`No pude reproducir: ${String(exc)}`));
   });
 }

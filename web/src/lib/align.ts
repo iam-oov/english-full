@@ -1,40 +1,40 @@
-/** Alineación referencia ↔ palabras de Azure — dominio puro, sin React.
+/** Reference ↔ Azure words alignment — pure domain, no React.
  *
- * Problema: para pintar el feedback INLINE en la oración hay que mapear los
- * tokens del texto original (con puntuación y mayúsculas) a los `WordScore`
- * de Azure, que vienen normalizados (minúsculas, sin puntuación) y, con
- * miscue activado, traen filas `Omission` (palabra de la referencia que no
- * dijiste, emitida en su lugar) e `Insertion` (palabra dicha de más, que no
- * consume ningún token de la referencia).
+ * Problem: to paint the feedback INLINE in the sentence we must map the
+ * tokens of the original text (with punctuation and capitalization) to the
+ * Azure `WordScore`s, which come normalized (lowercase, no punctuation)
+ * and, with miscue enabled, include `Omission` rows (a reference word you
+ * did not say, emitted in its place) and `Insertion` rows (an extra spoken
+ * word that consumes no reference token).
  *
- * Invariante de diseño: ante cualquier desincronización, el peor caso es un
- * token SIN resaltar (`score: null`) — nunca un resaltado corrido a la
- * palabra equivocada.
+ * Design invariant: on any desync, the worst case is a token left
+ * UNhighlighted (`score: null`) — never a highlight shifted onto the
+ * wrong word.
  */
 
 import type { WordScore } from "./types";
 
 export interface AlignedToken {
-  /** token original, para display */
+  /** original token, for display */
   token: string;
-  /** sin puntuación en los bordes (lo que se resalta y se manda al TTS) */
+  /** without punctuation at the edges (what gets highlighted and sent to TTS) */
   clean: string;
-  /** puntuación que queda FUERA del highlight */
+  /** punctuation left OUTSIDE the highlight */
   prefix: string;
   suffix: string;
-  /** score de Azure asociado, o null = Azure nunca evaluó este token */
+  /** associated Azure score, or null = Azure never evaluated this token */
   score: WordScore | null;
   omitted: boolean;
 }
 
 export interface Alignment {
   tokens: AlignedToken[];
-  /** palabras que dijiste de más (errorType Insertion) */
+  /** extra words you said (errorType Insertion) */
   insertions: WordScore[];
 }
 
-/** Distinto de `normalizeText` (game.ts) a propósito: acá "don't" debe
- * colapsar a "dont" para matchear contra la forma de Azure. */
+/** Deliberately different from `normalizeText` (game.ts): here "don't" must
+ * collapse to "dont" to match against Azure's form. */
 const norm = (w: string): string =>
   w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
@@ -48,12 +48,12 @@ function splitToken(token: string): {
   return { prefix: m[1] ?? "", clean: m[2] ?? "", suffix: m[3] ?? "" };
 }
 
-/** Cuántas palabras de Azure mirar hacia adelante para resincronizar. */
+/** How many Azure words to look ahead to resynchronize. */
 const LOOKAHEAD = 4;
 
 export function alignWords(reference: string, words: WordScore[]): Alignment {
-  // Las inserciones no consumen tokens de la referencia; el resto conserva
-  // el orden de lectura (las omisiones vienen emitidas en su lugar).
+  // Insertions consume no reference tokens; the rest keeps reading
+  // order (omissions are emitted in their place).
   const insertions: WordScore[] = [];
   const seq: WordScore[] = [];
   for (const w of words) {
@@ -62,7 +62,7 @@ export function alignWords(reference: string, words: WordScore[]): Alignment {
   }
 
   const tokens: AlignedToken[] = [];
-  let i = 0; // puntero sobre seq
+  let i = 0; // pointer over seq
   for (const raw of reference.split(/\s+/).filter(Boolean)) {
     const { prefix, clean, suffix } = splitToken(raw);
     const target = norm(clean);
@@ -77,8 +77,8 @@ export function alignWords(reference: string, words: WordScore[]): Alignment {
           i = j + 1;
           break;
         }
-        // Token con guión que Azure partió en dos ("well-known" -> well + known):
-        // el score del par es el del eslabón más flojo (la regla del juego).
+        // Hyphenated token Azure split in two ("well-known" -> well + known):
+        // the pair's score is the weakest link's (the game's rule).
         const wk = seq[j + 1];
         if (wk && norm(wj.word) + norm(wk.word) === target) {
           matched = {
@@ -91,7 +91,7 @@ export function alignWords(reference: string, words: WordScore[]): Alignment {
           break;
         }
       }
-      // sin match dentro de la ventana: token sin evaluar, NO avanzamos seq
+      // no match within the window: token left unevaluated, we do NOT advance seq
     }
 
     tokens.push({

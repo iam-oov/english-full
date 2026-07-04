@@ -1,9 +1,10 @@
-/** Adapter de DeepSeek (LLM): consejos de pronunciación personalizados.
- * Espejo de `coach.py`: opcional y sin regresión. `tip()` devuelve null si algo
- * falla (sin key, red caída, CORS) -> el caller cae a la pista estática.
+/** DeepSeek (LLM) adapter: personalized pronunciation tips.
+ * Mirror of `coach.py`: optional and regression-free. `tip()` returns null if
+ * anything fails (no key, network down, CORS) -> the caller falls back to the
+ * static hint.
  *
- * OJO navegador: la API de DeepSeek no manda cabeceras CORS, así que el fetch
- * directo puede fallar según el navegador/red. Se degrada solo: catch -> null.
+ * Browser caveat: the DeepSeek API sends no CORS headers, so the direct fetch
+ * may fail depending on browser/network. It degrades on its own: catch -> null.
  */
 
 import type { Settings } from "./config";
@@ -53,7 +54,7 @@ export class Coach {
     }
   }
 
-  /** Consejo corto (en español) para mejorar los sonidos más flojos. */
+  /** Short tip (in Spanish) to improve the weakest sounds. */
   async tip(
     word: string,
     phonemes: Array<[string, number]>,
@@ -86,9 +87,10 @@ export class Coach {
     return content ? content.trim() : null;
   }
 
-  /** Limpia texto salido de un OCR y lo divide en oraciones listas para jugar
-   * (sub-jefes). Devuelve null si algo falla -> el caller cae a la heurística
-   * local (cleanOcrText + Intl.Segmenter), mismo contrato que tip(). */
+  /** Cleans OCR-extracted text and splits it into sentences ready to play
+   * (sub-bosses). Returns null if anything fails -> the caller falls back to
+   * the local heuristic (cleanOcrText + Intl.Segmenter), same contract as
+   * tip(). */
   async smartSplit(rawText: string): Promise<string[] | null> {
     const system =
       "Sos un asistente que prepara texto en ingles, extraido por OCR de una " +

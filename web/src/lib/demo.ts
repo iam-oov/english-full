@@ -1,10 +1,10 @@
-/** Modo demo (?demo en la URL): un Scorer de mentira para QA visual.
+/** Demo mode (?demo in the URL): a fake Scorer for visual QA.
  *
- * Devuelve assessments enlatados y deterministas sin mic ni key de Azure:
- * el primer intento con cada objetivo falla (scores mixtos + una omisión +
- * una inserción), el segundo pasa. Permite recorrer ready -> recording ->
- * fail -> práctica -> pass -> win completo. No toca el juego real: solo se
- * usa cuando la URL trae ?demo.
+ * Returns canned, deterministic assessments with no mic or Azure key:
+ * the first attempt at each target fails (mixed scores + one omission +
+ * one insertion), the second passes. Lets you walk the full ready ->
+ * recording -> fail -> practice -> pass -> win flow. Doesn't touch the
+ * real game: only used when the URL carries ?demo.
  */
 
 import type { Assessment, PhonemeScore, WordScore } from "./types";
@@ -40,7 +40,7 @@ export function createDemoScorer(): ScorerPort {
         .map((w) => w.replace(/[^\p{L}\p{N}'’-]/gu, ""))
         .filter(Boolean);
       const words: WordScore[] = tokens.map((w, idx) => {
-        const base = 40 + (hash(w.toLowerCase()) % 60); // 40..99, estable por palabra
+        const base = 40 + (hash(w.toLowerCase()) % 60); // 40..99, stable per word
         const acc = n >= 2 ? Math.max(97, base) : base;
         const omitted = n === 1 && tokens.length > 4 && idx === tokens.length - 2;
         const phonemes: PhonemeScore[] = [...w].slice(0, 6).map((_ch, k) => ({

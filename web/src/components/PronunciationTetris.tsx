@@ -53,6 +53,7 @@ import {
   recordTest,
   type MicOption,
 } from "../lib/audio";
+import { cleanOcrText, extractTextFromImage } from "../lib/ocr";
 import { assessmentOk, weakWords, type Assessment } from "../lib/types";
 
 type Screen = "input" | "ready" | "recording" | "fail" | "pass" | "win";
@@ -725,6 +726,55 @@ export default function PronunciationTetris() {
     });
   };
 
+  /** Imagen -> OCR -> limpieza -> oraciones (coach LLM si hay key, si no
+   * Intl.Segmenter). El resultado cae al textarea UNA oración por línea, así
+   * ves los sub-jefes y corregís lo que el OCR haya inventado antes de jugar. */
+  const importImage = (file: File | Blob | null | undefined) => {
+    if (!file || G.busy || G.screen !== "input") return;
+    G.busy = true;
+    setFeedback("🔍 Leyendo la imagen… 0%", "c-accent");
+    rerender();
+    extractTextFromImage(file, (pct) => {
+      if (G.screen !== "input") return;
+      setFeedback(`🔍 Leyendo la imagen… ${pct}%`, "c-accent");
+      rerender();
+    }).then(async ({ text, error }) => {
+      if (G.screen !== "input") {
+        G.busy = false;
+        return rerender(); // se fue de la pantalla inicial: descartar
+      }
+      if (error || !text) {
+        G.busy = false;
+        setFeedback(`❌ ${error ?? "No encontré texto en la imagen."}`, "c-red");
+        return rerender();
+      }
+      const cleaned = cleanOcrText(text);
+      // Vía inteligente: el coach (DeepSeek) corrige errores de OCR y separa
+      // oraciones. Opcional y sin regresión: si falla, heurística local.
+      let sentences: string[] | null = null;
+      if (coach().available && cleaned) {
+        setFeedback("🧠 Puliendo el texto con el coach…", "c-accent");
+        rerender();
+        sentences = await coach().smartSplit(cleaned);
+      }
+      if (!sentences || sentences.length === 0) sentences = splitSentences(cleaned);
+      G.busy = false;
+      if (sentences.length === 0) {
+        setFeedback("❌ No encontré oraciones legibles en la imagen.", "c-red");
+        return rerender();
+      }
+      G.paragraph = sentences.join("\n");
+      const n = sentences.length;
+      setFeedback(
+        n > 1
+          ? `✅ Extraje ${n} oraciones → ${n} sub-jefes + 1 jefe final. Revisá cada línea (el OCR a veces inventa) y Shift+Enter.`
+          : "✅ Extraje 1 oración. Revisala y Shift+Enter.",
+        "c-green",
+      );
+      rerender();
+    });
+  };
+
   const bumpFont = (step: number) => {
     // No actúa en la pantalla inicial: ahí P/L son letras que estás tipeando.
     if (!hasGame() || G.screen === "input") return;
@@ -786,6 +836,7 @@ export default function PronunciationTetris() {
 
   const handleKeyRef = useRef(handleKey);
   handleKeyRef.current = handleKey;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     G.settings = loadSettings();
@@ -1047,13 +1098,52 @@ export default function PronunciationTetris() {
             <textarea
               className="pt-entry"
               value={G.paragraph}
-              placeholder="Pegá acá tu párrafo en inglés…"
+              placeholder="Pegá acá tu párrafo en inglés… (o una captura con Ctrl+V)"
               onChange={(e) => {
                 G.paragraph = e.target.value;
                 rerender();
               }}
+              onPaste={(e) => {
+                const item = Array.from(e.clipboardData.items).find((i) =>
+                  i.type.startsWith("image/"),
+                );
+                if (item) {
+                  e.preventDefault();
+                  importImage(item.getAsFile());
+                }
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                const file = e.dataTransfer.files?.[0];
+                if (file && file.type.startsWith("image/")) {
+                  e.preventDefault();
+                  importImage(file);
+                }
+              }}
               autoFocus
             />
+            <div className="pt-image-row">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  importImage(e.target.files?.[0]);
+                  e.target.value = ""; // permite re-elegir la misma imagen
+                }}
+              />
+              <button
+                className="pt-mic-test"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={G.busy}
+              >
+                🖼 Leer de una imagen
+              </button>
+              <span className="pt-image-hint">
+                o pegá / arrastrá una captura sobre el cuadro de texto
+              </span>
+            </div>
             <div className="pt-mic-row">
               <span style={{ color: "var(--dim)" }}>🎙</span>
               <select

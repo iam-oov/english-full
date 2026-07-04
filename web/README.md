@@ -26,6 +26,27 @@ usan las pistas estáticas. Ojo: la API de DeepSeek puede rechazar pedidos
 hechos desde un navegador (CORS); si pasa, el juego degrada solo a las pistas
 estáticas, sin romper nada.
 
+## Entrada desde imagen (OCR)
+
+En la pantalla inicial podés cargar una foto/captura de un texto en inglés:
+con el botón **🖼 Leer de una imagen**, pegando la imagen con Ctrl+V sobre el
+cuadro de texto, o arrastrándola encima. El flujo:
+
+1. **OCR client-side** con Tesseract.js (WASM; la primera vez descarga el
+   worker y los datos de idioma de un CDN, así que necesita red).
+2. **Limpieza** (`src/lib/ocr.ts`): des-guionado de fin de línea, unión de
+   líneas partidas en párrafos, descarte de basura sin letras (números de
+   página, símbolos sueltos).
+3. **División en sub-jefes**: si hay key de DeepSeek, el coach corrige errores
+   de OCR y separa oraciones con el LLM (`coach.smartSplit`, JSON mode); si
+   no —o si falla—, `splitSentences` usa `Intl.Segmenter` con re-unión de
+   abreviaturas ("Mr.", "p.m.", iniciales), que es bastante más listo que
+   partir por ".".
+
+El resultado cae al textarea **una oración por línea** (cada línea = un
+sub-jefe; el párrafo completo = jefe final), editable antes de empezar: el OCR
+a veces inventa, conviene revisar.
+
 ## Arquitectura
 
 Se conserva la frontera de puertos y adaptadores del original:

@@ -1212,17 +1212,21 @@ body {
     flex: 1 1 auto;
     justify-content: center;
   }
-  /* start bar: mic selector gets the full row; test + start share the next */
+  /* start bar: selector + Probar share a row; Empezar takes a full row */
   .footbar-inner .bar-label {
     flex: 1 1 100%;
   }
   .footbar-inner select {
-    flex: 1 1 100%;
+    flex: 1 1 0;
+    min-width: 0;
     max-width: none;
   }
   .footbar-inner .pt-mic-test {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     justify-content: center;
+  }
+  .footbar-inner > .pt-btn.big {
+    flex: 1 1 100%;
   }
 }
 @media (max-width: 600px) {

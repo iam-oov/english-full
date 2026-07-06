@@ -41,6 +41,7 @@ jobs:
       - run: pnpm build
         env:
           GITHUB_PAGES: "true"
+          PUBLIC_BUILD_VERSION: ${{ github.sha }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

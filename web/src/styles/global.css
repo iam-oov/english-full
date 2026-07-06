@@ -841,6 +841,19 @@ body {
   background: var(--surface);
 }
 
+/* deployed version (short commit sha) next to the brand */
+.pt-version {
+  color: var(--dim);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: ui-monospace, Menlo, monospace;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+  margin-left: 2px;
+}
+
 /* credit next to the brand in the navbar */
 .pt-credit {
   color: var(--dim);

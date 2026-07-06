@@ -1196,6 +1196,34 @@ body {
 }
 @media (max-width: 760px) {
   .pt-start-grid { grid-template-columns: minmax(0, 1fr); }
+
+  /* bottom bars: text on its own row, buttons sharing a full-width row */
+  .footbar-inner {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .footbar-inner .ab-text {
+    flex: 1 1 100%;
+  }
+  .footbar-inner .bar-spacer {
+    display: none;
+  }
+  .footbar-inner > .pt-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  /* start bar: mic selector gets the full row; test + start share the next */
+  .footbar-inner .bar-label {
+    flex: 1 1 100%;
+  }
+  .footbar-inner select {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  .footbar-inner .pt-mic-test {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
 }
 @media (max-width: 600px) {
   .pt-main { padding: 18px 14px 12px; }

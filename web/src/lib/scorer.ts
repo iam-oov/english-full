@@ -133,7 +133,7 @@ export class Scorer {
     // Silence that marks the END of speech: more slack for sentences/paragraph.
     config.setProperty(
       sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
-      longForm ? "3000" : "1200",
+      longForm ? "2000" : "800",
     );
     return config;
   }
@@ -211,7 +211,7 @@ export class Scorer {
   }
 
   /** CONTINUOUS recognition (for the boss = the entire paragraph). Accumulates
-   * the recognized phrases and cuts off after ~3.5s of prolonged silence. */
+   * the recognized phrases and cuts off after ~2.5s of prolonged silence. */
   private recognizeContinuous(
     recognizer: sdk.SpeechRecognizer,
     referenceText: string,
@@ -300,7 +300,7 @@ export class Scorer {
 
       const watchdog = setInterval(() => {
         const now = performance.now();
-        if (spoke && now - last > 3500) finish(); // you finished reading
+        if (spoke && now - last > 2500) finish(); // you finished reading
         else if (!spoke && now - start > 15000) finish(); // you never started speaking
         else if (now - start > 180000) finish(); // safety cap
       }, 150);

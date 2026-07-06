@@ -81,10 +81,11 @@ export function alignWords(reference: string, words: WordScore[]): Alignment {
         // the pair's score is the weakest link's (the game's rule).
         const wk = seq[j + 1];
         if (wk && norm(wj.word) + norm(wk.word) === target) {
+          const weakest = wj.accuracy <= wk.accuracy ? wj : wk;
           matched = {
             word: clean,
-            accuracy: Math.min(wj.accuracy, wk.accuracy),
-            errorType: wj.errorType.includes("Omission") ? wj.errorType : wk.errorType,
+            accuracy: weakest.accuracy,
+            errorType: weakest.errorType,
             phonemes: [...wj.phonemes, ...wk.phonemes],
           };
           i = j + 2;

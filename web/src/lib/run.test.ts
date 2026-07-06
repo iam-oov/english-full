@@ -25,11 +25,6 @@ const run = (over: Partial<SavedRun> = {}): SavedRun => ({
   wordAttempts: 1,
   screen: "fail",
   assessment: null,
-  badgeText: "",
-  badgeTone: "c-dim",
-  resultStyle: "idle",
-  feedbackText: "",
-  feedbackTone: "c-muted",
   practice: null,
   ...over,
 });
@@ -75,12 +70,24 @@ describe("run persistence", () => {
     const raw = JSON.parse(JSON.stringify(saved));
     delete raw.screen;
     delete raw.wordAttempts;
-    raw.feedbackTone = 42;
     store.set("pronunciation-tetris.run", JSON.stringify(raw));
     const loaded = loadRun();
     expect(loaded?.screen).toBe("ready");
     expect(loaded?.wordAttempts).toBe(0);
-    expect(loaded?.feedbackTone).toBe("c-muted");
+  });
+
+  it("clamps an out-of-range index", () => {
+    saveRun(run({ index: 99 }));
+    expect(loadRun()?.index).toBe(2);
+    saveRun(run({ index: -3 }));
+    expect(loadRun()?.index).toBe(0);
+  });
+
+  it("drops a practice block whose origin is out of range", () => {
+    saveRun(run({ practice: { origin: 7, words: ["crop"], pos: 0 } }));
+    const loaded = loadRun();
+    expect(loaded).not.toBeNull();
+    expect(loaded?.practice).toBeNull();
   });
 
   it("drops a malformed practice block but keeps the run", () => {

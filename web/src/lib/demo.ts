@@ -8,7 +8,7 @@
  */
 
 import type { Assessment, PhonemeScore, WordScore } from "./types";
-import type { AssessOptions } from "./scorer";
+import type { AssessOptions, ScorerPort } from "./ports";
 
 const IPA = ["ð", "ɪ", "æ", "ə", "ɹ", "iː", "ʌ", "eɪ", "s", "t", "k", "m", "n", "l"];
 
@@ -16,11 +16,6 @@ const hash = (s: string): number =>
   [...s].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-export interface ScorerPort {
-  assess(referenceText: string, opts?: AssessOptions): Promise<Assessment>;
-  speak(text: string): Promise<string | null>;
-}
 
 export function createDemoScorer(): ScorerPort {
   const attempts = new Map<string, number>();

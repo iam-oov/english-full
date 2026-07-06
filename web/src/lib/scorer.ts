@@ -17,9 +17,9 @@ import * as sdk from "microsoft-cognitiveservices-speech-sdk";
 import type { Assessment, PhonemeScore, WordScore } from "./types";
 import { errorAssessment } from "./types";
 import type { Settings } from "./config";
+import type { AssessOptions, OnStatus, ScorerPort } from "./ports";
 
-export type StatusCode = "listening" | "speech" | "processing";
-export type OnStatus = (code: StatusCode) => void;
+export type { AssessOptions, OnStatus, StatusCode } from "./ports";
 
 /** A bare "Unable to contact server 1006" gives the player nothing to act
  * on; append the two usual culprits (region typo / browser shields). */
@@ -33,16 +33,6 @@ function cancelMessage(reason: string, errorDetails?: string): string {
   return msg;
 }
 
-export interface AssessOptions {
-  onStatus?: OnStatus;
-  /** deviceId of the chosen microphone; undefined = system default */
-  deviceId?: string;
-  /** tolerates longer pauses between words before cutting off (sentence/boss) */
-  longForm?: boolean;
-  /** CONTINUOUS recognition, without recognizeOnce's ~15s cap (boss) */
-  continuous?: boolean;
-}
-
 /** Shape of the detailed JSON the service returns (NBest[0]). */
 interface RawWord {
   Word: string;
@@ -51,6 +41,28 @@ interface RawWord {
     Phoneme: string;
     PronunciationAssessment?: { AccuracyScore?: number };
   }>;
+}
+
+interface RawNBest {
+  PronunciationAssessment?: {
+    AccuracyScore?: number;
+    PronScore?: number;
+    CompletenessScore?: number;
+    FluencyScore?: number;
+  };
+  Words?: RawWord[];
+}
+
+function parseNBest(json: string | undefined): RawNBest | null {
+  if (!json) return null;
+  try {
+    const nbest: unknown = JSON.parse(json)?.NBest?.[0];
+    return typeof nbest === "object" && nbest !== null
+      ? (nbest as RawNBest)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseWords(raw: RawWord[] | undefined): WordScore[] {
@@ -113,7 +125,7 @@ class OwnVoiceCapture {
   }
 }
 
-export class Scorer {
+export class Scorer implements ScorerPort {
   constructor(private settings: Settings) {}
 
   private speechConfig(longForm: boolean): sdk.SpeechConfig {
@@ -179,17 +191,35 @@ export class Scorer {
 
   /** Listens to the microphone and assesses pronunciation against referenceText. */
   async assess(referenceText: string, opts: AssessOptions = {}): Promise<Assessment> {
+    if (opts.signal?.aborted) return errorAssessment("Cancelado.");
     const capture = new OwnVoiceCapture();
     try {
       await capture.start(opts.deviceId);
       const recognizer = this.buildRecognizer(referenceText, opts);
+      // An abandoned attempt must release the microphone immediately, not
+      // after the recognizer's own timeout: two recognizers contending for
+      // the mic is the failure mode this prevents.
+      const onAbort = () => {
+        try {
+          if (opts.continuous) recognizer.stopContinuousRecognitionAsync();
+          else recognizer.close();
+        } catch {
+          // already closed
+        }
+      };
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
       let assessment: Assessment;
       try {
         assessment = opts.continuous
           ? await this.recognizeContinuous(recognizer, referenceText, opts.onStatus)
           : await this.recognizeOnce(recognizer);
       } finally {
-        recognizer.close();
+        opts.signal?.removeEventListener("abort", onAbort);
+        try {
+          recognizer.close();
+        } catch {
+          // already closed by abort
+        }
       }
       assessment.audioUrl = await capture.stop();
       // Cross-check on "heard nothing": our own recording tells WHICH side
@@ -281,18 +311,15 @@ export class Scorer {
         last = performance.now();
         if (e.result.reason !== sdk.ResultReason.RecognizedSpeech) return;
         if (e.result.text) texts.push(e.result.text);
-        try {
-          const json = e.result.properties.getProperty(
+        const nbest = parseNBest(
+          e.result.properties.getProperty(
             sdk.PropertyId.SpeechServiceResponse_JsonResult,
-          );
-          const nbest = JSON.parse(json)?.NBest?.[0];
-          if (!nbest) return;
-          const fluency = nbest.PronunciationAssessment?.FluencyScore;
-          if (fluency) fluencies.push(fluency);
-          words.push(...parseWords(nbest.Words));
-        } catch {
-          // phrase without a breakdown: ignored, same as on desktop
-        }
+          ),
+        );
+        if (!nbest) return;
+        const fluency = nbest.PronunciationAssessment?.FluencyScore;
+        if (fluency) fluencies.push(fluency);
+        words.push(...parseWords(nbest.Words));
       };
       recognizer.speechStartDetected = () => {
         spoke = true;
@@ -431,15 +458,11 @@ export class Scorer {
       return errorAssessment(msg);
     }
 
-    let nbest: any = null;
-    try {
-      const json = result.properties.getProperty(
+    const nbest = parseNBest(
+      result.properties.getProperty(
         sdk.PropertyId.SpeechServiceResponse_JsonResult,
-      );
-      nbest = JSON.parse(json)?.NBest?.[0] ?? null;
-    } catch {
-      nbest = null;
-    }
+      ),
+    );
     const pron = nbest?.PronunciationAssessment ?? {};
     return {
       recognizedText: result.text ?? "",

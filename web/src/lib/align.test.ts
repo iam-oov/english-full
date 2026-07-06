@@ -53,11 +53,12 @@ describe("alignWords", () => {
     const { tokens } = alignWords("a well-known fact", [
       w("a", 99),
       w("well", 95),
-      w("known", 60),
+      w("known", 60, "Mispronunciation"),
       w("fact", 97),
     ]);
     expect(tokens[1]!.clean).toBe("well-known");
     expect(tokens[1]!.score?.accuracy).toBe(60);
+    expect(tokens[1]!.score?.errorType).toBe("Mispronunciation");
     expect(tokens[2]!.score?.word).toBe("fact");
   });
 

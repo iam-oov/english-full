@@ -1182,6 +1182,17 @@ body {
   min-width: 24px;
   text-align: center;
 }
+.pt-conn-test {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pt-conn-test .conn-msg {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
 .pt-modal-actions {
   display: flex;
   justify-content: flex-end;

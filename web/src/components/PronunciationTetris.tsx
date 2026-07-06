@@ -1954,6 +1954,45 @@ function SettingsModal(props: {
 }) {
   const draft = useRef<Settings>({ ...props.settings });
   const [, force] = useReducer((x: number) => x + 1, 0);
+  const connTest = useRef<{ text: string; tone: string } | null>(null);
+
+  /** Pinpoints "error 1006" causes without guessing: an issueToken call
+   * validates region (DNS) and key (401) in one shot. */
+  const testConnection = async () => {
+    const region = draft.current.speechRegion.trim();
+    const key = draft.current.speechKey.trim();
+    if (!region || !key) {
+      connTest.current = { text: "Falta la key o la región.", tone: "c-red" };
+      force();
+      return;
+    }
+    connTest.current = { text: "Probando conexión…", tone: "c-accent" };
+    force();
+    try {
+      const resp = await fetch(
+        `https://${region}.api.cognitive.microsoft.com/sts/v1.0/issueToken`,
+        {
+          method: "POST",
+          headers: { "Ocp-Apim-Subscription-Key": key },
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      connTest.current = resp.ok
+        ? { text: "✓ Conexión OK: región y key válidas.", tone: "c-green" }
+        : resp.status === 401 || resp.status === 403
+          ? {
+              text: "✗ La región responde pero la key es inválida (o es de otra región).",
+              tone: "c-red",
+            }
+          : { text: `✗ El servidor respondió ${resp.status}.`, tone: "c-red" };
+    } catch {
+      connTest.current = {
+        text: `✗ No existe/no responde el servidor para la región "${region}". Usa el identificador corto (ej. eastus, westus2), o tu red bloquea Azure.`,
+        tone: "c-red",
+      };
+    }
+    force();
+  };
 
   const field = (
     label: string,
@@ -1993,6 +2032,19 @@ function SettingsModal(props: {
           {field("Voz TTS", "ttsVoice")}
           {field("Tono (pitch)", "ttsPitch", { placeholder: "0%, +10%, -15%…" })}
           {field("Velocidad (rate)", "ttsRate", { placeholder: "0%, -10%, slow…" })}
+          <div className="pt-field">
+            <label></label>
+            <div className="pt-conn-test">
+              <button className="pt-btn sm" onClick={testConnection}>
+                Probar conexión
+              </button>
+              {connTest.current && (
+                <span className={`conn-msg ${connTest.current.tone}`}>
+                  {connTest.current.text}
+                </span>
+              )}
+            </div>
+          </div>
         </fieldset>
         <fieldset>
           <legend>Juego</legend>

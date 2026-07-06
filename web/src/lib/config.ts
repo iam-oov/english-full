@@ -17,6 +17,8 @@ export interface Settings {
   passThreshold: number;
   /** 2nd way to defeat: average within <= margin of threshold + correct text. */
   nearMissMargin: number;
+  /** ms of silence that end a sentence recording (words use 40%, boss +500). */
+  endSilenceMs: number;
   /** Student's CEFR level (A1..C2): calibrates the LLM tips. */
   cefrLevel: string;
   /** DeepSeek (LLM) is OPTIONAL: without a key, static hints and that's it. */
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsRate: "0%",
   passThreshold: 85,
   nearMissMargin: 5,
+  endSilenceMs: 2000,
   cefrLevel: "B2",
   deepseekKey: "",
   deepseekModel: "deepseek-chat",

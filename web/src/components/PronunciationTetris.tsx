@@ -2052,6 +2052,10 @@ function SettingsModal(props: {
         <fieldset>
           <legend>Juego</legend>
           {field("Umbral de aprobado", "passThreshold", { type: "number" })}
+          {field("Silencio de corte (ms)", "endSilenceMs", {
+            type: "number",
+            placeholder: "2000 — menos = evalúa más rápido",
+          })}
           {field("Nivel CEFR", "cefrLevel", { placeholder: "A1…C2" })}
           <div className="pt-field">
             <label>Tamaño del texto</label>

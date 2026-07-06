@@ -133,9 +133,14 @@ export class Scorer {
     // Silence that marks the END of speech: more slack for sentences/paragraph.
     config.setProperty(
       sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs,
-      longForm ? "2000" : "800",
+      String(longForm ? this.endSilenceMs() : Math.round(this.endSilenceMs() * 0.4)),
     );
     return config;
+  }
+
+  private endSilenceMs(): number {
+    const v = this.settings.endSilenceMs;
+    return Number.isFinite(v) && v >= 300 ? v : 2000;
   }
 
   private buildRecognizer(
@@ -300,7 +305,7 @@ export class Scorer {
 
       const watchdog = setInterval(() => {
         const now = performance.now();
-        if (spoke && now - last > 2500) finish(); // you finished reading
+        if (spoke && now - last > this.endSilenceMs() + 500) finish();
         else if (!spoke && now - start > 15000) finish(); // you never started speaking
         else if (now - start > 180000) finish(); // safety cap
       }, 150);

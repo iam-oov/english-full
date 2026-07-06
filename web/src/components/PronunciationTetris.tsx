@@ -1381,7 +1381,7 @@ export default function PronunciationTetris() {
                   <div className="drop-title">Soltá una imagen</div>
                   <div className="drop-desc">
                     Extraemos el texto de la foto (apunte, libro, captura) y
-                    armamos los sub-jefes por vos.
+                    armamos los sub-jefes por ti.
                   </div>
                   <button className="pt-mic-test" disabled={G.busy}>
                     <Upload size={13} /> Elegir archivo

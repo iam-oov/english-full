@@ -884,7 +884,9 @@ body {
 .pt-start {
   width: min(1080px, 100%);
   margin: 0 auto;
-  padding: 34px 28px 28px;
+  /* generous bottom padding: breathing room before the pinned mic bar,
+   * especially when the sheet scrolls on small screens */
+  padding: 34px 28px 48px;
   display: flex;
   flex-direction: column;
   gap: 8px;

@@ -1997,6 +1997,36 @@ function SettingsModal(props: {
     force();
   };
 
+  const dsTest = useRef<{ text: string; tone: string } | null>(null);
+  const testDeepSeek = async () => {
+    const key = draft.current.deepseekKey.trim();
+    const base = draft.current.deepseekBaseUrl.trim().replace(/\/+$/, "");
+    if (!key) {
+      dsTest.current = { text: "Falta la key de DeepSeek.", tone: "c-red" };
+      force();
+      return;
+    }
+    dsTest.current = { text: "Probando conexión…", tone: "c-accent" };
+    force();
+    try {
+      const resp = await fetch(`${base}/models`, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      dsTest.current = resp.ok
+        ? { text: "✓ Conexión OK: el coach con IA está disponible.", tone: "c-green" }
+        : resp.status === 401 || resp.status === 403
+          ? { text: "✗ La key de DeepSeek es inválida.", tone: "c-red" }
+          : { text: `✗ El servidor respondió ${resp.status}.`, tone: "c-red" };
+    } catch {
+      dsTest.current = {
+        text: "✗ No se pudo conectar: el navegador o tu red bloquea la API (CORS). El juego usará las pistas estáticas.",
+        tone: "c-red",
+      };
+    }
+    force();
+  };
+
   const field = (
     label: string,
     key: keyof Settings,
@@ -2054,7 +2084,7 @@ function SettingsModal(props: {
           {field("Umbral de aprobado", "passThreshold", { type: "number" })}
           {field("Silencio de corte (ms)", "endSilenceMs", {
             type: "number",
-            placeholder: "2000 — menos = evalúa más rápido",
+            placeholder: "1500 — menos = evalúa más rápido",
           })}
           {field("Nivel CEFR", "cefrLevel", { placeholder: "A1…C2" })}
           <div className="pt-field">
@@ -2085,10 +2115,19 @@ function SettingsModal(props: {
           {field("DEEPSEEK_API_KEY", "deepseekKey", { type: "password", placeholder: "vacío = pistas estáticas" })}
           {field("Modelo", "deepseekModel")}
           {field("Base URL", "deepseekBaseUrl")}
-          <p className="note" style={{ marginTop: 10, marginBottom: 0 }}>
-            Ojo: la API de DeepSeek puede bloquear pedidos desde el navegador
-            (CORS). Si pasa, el juego cae solo a las pistas estáticas.
-          </p>
+          <div className="pt-field">
+            <label></label>
+            <div className="pt-conn-test">
+              <button className="pt-btn sm" onClick={testDeepSeek}>
+                Probar conexión
+              </button>
+              {dsTest.current && (
+                <span className={`conn-msg ${dsTest.current.tone}`}>
+                  {dsTest.current.text}
+                </span>
+              )}
+            </div>
+          </div>
         </fieldset>
         <div className="pt-modal-actions">
           <button className="pt-btn" onClick={props.onClose}>

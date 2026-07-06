@@ -921,9 +921,10 @@ body {
 }
 .pt-setup-card b { color: var(--red); }
 
+/* image dropzone left, paragraph card (slightly wider) right */
 .pt-start-grid {
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
+  grid-template-columns: 1fr 1.15fr;
   gap: 16px;
   width: 100%;
   margin-top: 10px;

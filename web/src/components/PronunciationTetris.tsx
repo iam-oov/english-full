@@ -1342,35 +1342,7 @@ export default function PronunciationTetris() {
               )}
 
               <div className="pt-start-grid">
-                {/* left card: paste/type paragraph */}
-                <div className="pt-card">
-                  <div className="pt-card-label">≣ Pegá un párrafo</div>
-                  <div className="pt-card-sub">
-                    Cada «.» o salto de línea crea un sub-jefe.
-                  </div>
-                  <textarea
-                    className="pt-entry"
-                    value={G.paragraph}
-                    placeholder="Escribí o pegá el texto acá…"
-                    onChange={(e) => {
-                      G.paragraph = e.target.value;
-                      saveParagraph(e.target.value);
-                      rerender();
-                    }}
-                    onPaste={(e) => {
-                      const item = Array.from(e.clipboardData.items).find((i) =>
-                        i.type.startsWith("image/"),
-                      );
-                      if (item) {
-                        e.preventDefault();
-                        importImage(item.getAsFile());
-                      }
-                    }}
-                    autoFocus
-                  />
-                </div>
-
-                {/* right card: image dropzone (OCR) */}
+                {/* left card: image dropzone (OCR) */}
                 <div
                   className={`pt-card pt-drop${G.dropHover ? " over" : ""}`}
                   onClick={() => !G.busy && fileInputRef.current?.click()}
@@ -1406,7 +1378,7 @@ export default function PronunciationTetris() {
                   <span className="drop-ico">
                     <ImageIcon size={19} />
                   </span>
-                  <div className="drop-title">…o soltá una imagen</div>
+                  <div className="drop-title">Soltá una imagen</div>
                   <div className="drop-desc">
                     Extraemos el texto de la foto (apunte, libro, captura) y
                     armamos los sub-jefes por vos.
@@ -1419,6 +1391,34 @@ export default function PronunciationTetris() {
                       {G.ocrMsg.text}
                     </div>
                   )}
+                </div>
+
+                {/* right card: paste/type paragraph */}
+                <div className="pt-card">
+                  <div className="pt-card-label">≣ …o pegá un párrafo</div>
+                  <div className="pt-card-sub">
+                    Cada «.» o salto de línea crea un sub-jefe.
+                  </div>
+                  <textarea
+                    className="pt-entry"
+                    value={G.paragraph}
+                    placeholder="Escribí o pegá el texto acá…"
+                    onChange={(e) => {
+                      G.paragraph = e.target.value;
+                      saveParagraph(e.target.value);
+                      rerender();
+                    }}
+                    onPaste={(e) => {
+                      const item = Array.from(e.clipboardData.items).find((i) =>
+                        i.type.startsWith("image/"),
+                      );
+                      if (item) {
+                        e.preventDefault();
+                        importImage(item.getAsFile());
+                      }
+                    }}
+                    autoFocus
+                  />
                 </div>
               </div>
             </div>

@@ -871,8 +871,12 @@ body {
   margin: 0 auto;
   padding: 24px 0;
 }
+/* The app itself never scrolls, but the start sheet scrolls INTERNALLY:
+ * on small screens the two cards stack and overflow the fixed height. */
 .pt-start-sheet {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   display: flex;

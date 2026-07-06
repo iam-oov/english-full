@@ -11,6 +11,8 @@
  * clears the bar; a red unit always blocks, even with a high average.
  */
 
+import type { Assessment } from "./types";
+
 export interface Verdict {
   passed: boolean;
   /** worst-scored unit (null when there is no breakdown) */
@@ -41,4 +43,31 @@ export function judge(
     worstLabel,
     worstScore,
   };
+}
+
+export function assessmentUnits(
+  a: Assessment,
+  multiword: boolean,
+): Array<[string, number]> {
+  if (multiword) {
+    return a.words
+      .filter((w) => !w.errorType.includes("Insertion"))
+      .map((w) => [w.word, w.accuracy]);
+  }
+  return (a.words[0]?.phonemes ?? []).map((p) => [p.phoneme, p.accuracy]);
+}
+
+export function judgeAssessment(
+  a: Assessment,
+  multiword: boolean,
+  threshold: number,
+): Verdict {
+  return judge(assessmentUnits(a, multiword), {
+    accuracy: a.accuracy,
+    threshold,
+  });
+}
+
+export function redCount(a: Assessment, multiword: boolean): number {
+  return assessmentUnits(a, multiword).filter(([, s]) => s < RED_CUTOFF).length;
 }

@@ -6,6 +6,8 @@
  *   "word"     -> single word (only in practice mode via R)
  */
 
+import { weakWords, type Assessment } from "./types";
+
 export type Kind = "sentence" | "boss" | "word";
 
 export interface Target {
@@ -167,4 +169,23 @@ export function phonemeHint(phoneme: string): string | null {
   return (
     PHONEME_HINTS[phoneme] ?? PHONEME_HINTS[phoneme.replace(/ː/g, "")] ?? null
   );
+}
+
+export function failHint(
+  a: Assessment,
+  multiword: boolean,
+  threshold: number,
+): string {
+  if (multiword) {
+    if (weakWords(a, threshold).length === 0) {
+      return `Casi. Completaste ${a.completeness.toFixed(0)}%, fluidez ${a.fluency.toFixed(0)}%.`;
+    }
+    return "";
+  }
+  const phons = a.words[0]?.phonemes ?? [];
+  if (phons.length === 0) return "Casi. Afiná un poquito y de nuevo.";
+  const worst = phons.reduce((x, y) => (y.accuracy < x.accuracy ? y : x));
+  const base = `Enfocate en [${worst.phoneme}] (${worst.accuracy.toFixed(0)}%)`;
+  const tip = phonemeHint(worst.phoneme);
+  return tip ? `${base}: ${tip}` : base;
 }

@@ -12,6 +12,8 @@
  * restoring mid-drill lands you back on the origin sentence.
  */
 
+import type { Assessment } from "./types";
+
 export interface SavedRun {
   /** Source of truth: targets are rebuilt from these via buildTargets. */
   sentences: string[];
@@ -32,12 +34,7 @@ export interface SavedRun {
   /** Post-attempt view, so a refresh lands exactly where you were. */
   screen: "ready" | "fail" | "pass";
   /** Serialized Assessment DTO (audioUrl stripped: blobs don't survive). */
-  assessment: unknown | null;
-  badgeText: string;
-  badgeTone: string;
-  resultStyle: string;
-  feedbackText: string;
-  feedbackTone: string;
+  assessment: Assessment | null;
   /** Active practice drill: origin row, word queue and position in it. */
   practice: { origin: number; words: string[]; pos: number } | null;
 }
@@ -64,9 +61,18 @@ export function loadRun(): SavedRun | null {
     ) {
       return null;
     }
+    const expectedTargets =
+      data.sentences.length + (data.sentences.length > 1 ? 1 : 0);
+    if (
+      data.status.length !== expectedTargets ||
+      data.bestHp.length !== expectedTargets ||
+      data.errors.length !== expectedTargets
+    ) {
+      return null;
+    }
     return {
       sentences: data.sentences,
-      index: data.index,
+      index: Math.min(Math.max(0, data.index), expectedTargets - 1),
       status: data.status,
       bestHp: data.bestHp,
       errors: data.errors,
@@ -86,18 +92,12 @@ export function loadRun(): SavedRun | null {
         Array.isArray(data.assessment.words)
           ? data.assessment
           : null,
-      badgeText: typeof data.badgeText === "string" ? data.badgeText : "",
-      badgeTone: typeof data.badgeTone === "string" ? data.badgeTone : "c-dim",
-      resultStyle:
-        typeof data.resultStyle === "string" ? data.resultStyle : "idle",
-      feedbackText:
-        typeof data.feedbackText === "string" ? data.feedbackText : "",
-      feedbackTone:
-        typeof data.feedbackTone === "string" ? data.feedbackTone : "c-muted",
       practice:
         typeof data.practice === "object" &&
         data.practice !== null &&
         typeof data.practice.origin === "number" &&
+        data.practice.origin >= 0 &&
+        data.practice.origin < expectedTargets &&
         Array.isArray(data.practice.words) &&
         data.practice.words.every((w: unknown) => typeof w === "string") &&
         typeof data.practice.pos === "number"

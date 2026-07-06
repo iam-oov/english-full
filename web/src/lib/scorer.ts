@@ -140,7 +140,7 @@ export class Scorer {
 
   private endSilenceMs(): number {
     const v = this.settings.endSilenceMs;
-    return Number.isFinite(v) && v >= 300 ? v : 2000;
+    return Number.isFinite(v) && v >= 300 ? v : 1500;
   }
 
   private buildRecognizer(

@@ -36,7 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsRate: "0%",
   passThreshold: 85,
   nearMissMargin: 5,
-  endSilenceMs: 2000,
+  endSilenceMs: 1500,
   cefrLevel: "B2",
   deepseekKey: "",
   deepseekModel: "deepseek-chat",

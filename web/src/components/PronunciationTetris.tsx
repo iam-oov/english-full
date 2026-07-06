@@ -1278,8 +1278,8 @@ export default function PronunciationTetris() {
         <div className="pt-brand">
           <span className="brand-dot" />
           Pronunciation Tetris
-          <span className="pt-version" title="Versión desplegada (commit)">
-            {(import.meta.env.PUBLIC_BUILD_VERSION ?? "dev").slice(0, 7)}
+          <span className="pt-version" title="Versión desplegada">
+            {import.meta.env.PUBLIC_BUILD_VERSION ?? "dev"}
           </span>
           <span className="pt-credit">
             · Construido por{" "}

@@ -79,11 +79,35 @@ export function saveSettings(s: Settings): void {
  * should not force you to type it again. */
 const PARAGRAPH_KEY = "pronunciation-tetris.paragraph";
 
+/** Starter paragraph so a first visit (or a cleared box) is playable
+ * immediately. */
+export const DEFAULT_PARAGRAPH = `The crop was saved, and the Pilgrims never faced starvation again.
+In gratitude, they set aside a day of Thanksgiving.
+The little colony at Plymouth was becoming strong and secure.
+Afterwards, other colonies were established in America.
+Ever since, the people continued to observe Thanksgiving Day.
+They enjoyed great feasts and reunions with family and friends.
+Thanksgiving was established very early in our history.
+For years it was strictly a local celebration.
+After the Independence War, George Washington proclaimed a Thanksgiving Holiday.
+He recommended giving thanks for the establishment of a new nation.
+Therefore, each year people began to observe Thanksgiving.
+Still, it was celebrated at different times in different communities.
+Many people around the nation hoped for an official Thanksgiving Day.
+Sarah Hale wrote articles on the subject.
+She sent letters to prominent people everywhere.
+She even appealed to President Lincoln.
+Lincoln agreed and proclaimed the last Thursday in November the national day of Thanksgiving.
+After this, each president issued a Thanksgiving proclamation every year.
+Finally, the Congress made the fourth Thursday in November a national Thanksgiving Day.
+On this day each year, Americans pause to give thanks and count their blessings.`;
+
 export function loadParagraph(): string {
   try {
-    return localStorage.getItem(PARAGRAPH_KEY) ?? "";
+    const stored = localStorage.getItem(PARAGRAPH_KEY);
+    return stored && stored.trim() ? stored : DEFAULT_PARAGRAPH;
   } catch {
-    return "";
+    return DEFAULT_PARAGRAPH;
   }
 }
 

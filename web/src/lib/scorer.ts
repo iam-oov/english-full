@@ -187,6 +187,13 @@ export class Scorer {
         recognizer.close();
       }
       assessment.audioUrl = await capture.stop();
+      // Cross-check on "heard nothing": our own recording tells WHICH side
+      // is deaf — the phone's mic or the recognition service.
+      if (assessment.error?.startsWith("No te escuché")) {
+        assessment.error += assessment.audioUrl
+          ? " Tu micrófono SÍ grabó: usa «Escuchar tu respuesta» para verificar qué captó."
+          : " Tu micrófono tampoco grabó nada localmente: revisa el permiso del mic o si otra app lo está usando.";
+      }
       return assessment;
     } catch (exc) {
       await capture.stop();
@@ -234,12 +241,13 @@ export class Scorer {
           return errorAssessment(cancelMsg);
         }
         if (words.length === 0) {
+          const detail = `voz detectada: ${spoke ? "sí" : "no"} · frases reconocidas: ${texts.length} · ${((performance.now() - start) / 1000).toFixed(1)}s`;
           console.error("[scorer] continuous recognition heard nothing:", {
             speechDetected: spoke,
             recognizedTexts: texts,
             elapsedMs: Math.round(performance.now() - start),
           });
-          return errorAssessment("No te escuché. Probá de nuevo.");
+          return errorAssessment(`No te escuché (${detail}). Probá de nuevo.`);
         }
         const accuracy =
           words.reduce((acc, w) => acc + w.accuracy, 0) / words.length;
@@ -380,25 +388,33 @@ export class Scorer {
   /** Translation of the raw Azure result into our Assessment. */
   private toAssessment(result: sdk.SpeechRecognitionResult): Assessment {
     if (result.reason === sdk.ResultReason.NoMatch) {
-      // The UI shows a friendly message; the real cause goes to the console
-      // (InitialSilenceTimeout = mic silent, BabbleTimeout = only noise, ...).
+      // Mobile players have no console, so the technical cause goes into
+      // the UI message too (InitialSilenceTimeout = mic silent, ...).
+      let detail = "sin detalles del SDK";
       try {
         const noMatch = sdk.NoMatchDetails.fromResult(result);
-        console.error(
-          "[scorer] Azure NoMatch — reason:",
-          sdk.NoMatchReason[noMatch.reason],
-          {
-            resultText: result.text,
-            durationTicks: result.duration,
-            json: result.properties.getProperty(
-              sdk.PropertyId.SpeechServiceResponse_JsonResult,
-            ),
-          },
-        );
+        const causes: Record<number, string> = {
+          [sdk.NoMatchReason.InitialSilenceTimeout]:
+            "no detecté voz, solo silencio inicial",
+          [sdk.NoMatchReason.InitialBabbleTimeout]: "solo detecté ruido de fondo",
+          [sdk.NoMatchReason.NotRecognized]:
+            "detecté sonido pero no reconocí palabras",
+        };
+        detail = causes[noMatch.reason] ?? `NoMatchReason=${noMatch.reason}`;
+        const seconds = Number(result.duration) / 10_000_000;
+        if (Number.isFinite(seconds) && seconds > 0) {
+          detail += ` · ${seconds.toFixed(1)}s de audio`;
+        }
+        console.error("[scorer] Azure NoMatch:", detail, {
+          resultText: result.text,
+          json: result.properties.getProperty(
+            sdk.PropertyId.SpeechServiceResponse_JsonResult,
+          ),
+        });
       } catch (exc) {
         console.error("[scorer] Azure NoMatch (no details available):", exc);
       }
-      return errorAssessment("No te escuché. Probá de nuevo.");
+      return errorAssessment(`No te escuché (${detail}). Probá de nuevo.`);
     }
     if (result.reason === sdk.ResultReason.Canceled) {
       const details = sdk.CancellationDetails.fromResult(result);

@@ -41,15 +41,21 @@ import {
 import {
   KEYS,
   buildTargets,
+  failHint,
   isContinuous,
   isLongForm,
   isMultiword,
-  phonemeHint,
   makeWord,
   splitSentences,
   type Target,
 } from "../lib/game";
-import { judge, RED_CUTOFF } from "../lib/scoring";
+import {
+  RED_CUTOFF,
+  assessmentUnits,
+  judge,
+  judgeAssessment,
+  redCount,
+} from "../lib/scoring";
 import { alignWords, type Alignment } from "../lib/align";
 import {
   DEFAULT_SETTINGS,
@@ -81,7 +87,7 @@ import {
 } from "../lib/audio";
 import { cleanOcrText, extractTextFromImage } from "../lib/ocr";
 import { clearRun, loadRun, saveRun, type SavedRun } from "../lib/run";
-import { assessmentOk, weakWords, type Assessment } from "../lib/types";
+import { assessmentOk, type Assessment } from "../lib/types";
 
 type Screen = "input" | "ready" | "recording" | "fail" | "pass" | "win";
 type ResultStyle = "idle" | "pass" | "fail-amber" | "fail-red";
@@ -218,7 +224,7 @@ export default function PronunciationTetris() {
   const curErrors = (): Record<string, number> => {
     const t = current();
     if (!t) return {};
-    return (G.errors[t.id] ??= {});
+    return G.errors[t.id] ?? {};
   };
 
   const worstWords = (): Array<[string, number]> =>
@@ -349,15 +355,7 @@ export default function PronunciationTetris() {
     const a = G.lastAssessment;
     if (a && cur && (G.screen === "fail" || G.screen === "pass")) {
       const multiword = isMultiword(cur);
-      const units: Array<[string, number]> = multiword
-        ? a.words
-          .filter((w) => !w.errorType.includes("Insertion"))
-          .map((w) => [w.word, w.accuracy])
-        : (a.words[0]?.phonemes ?? []).map((p) => [p.phoneme, p.accuracy]);
-      const verdict = judge(units, {
-        accuracy: a.accuracy,
-        threshold: G.settings.passThreshold,
-      });
+      const verdict = judgeAssessment(a, multiword, G.settings.passThreshold);
       G.screen = verdict.passed ? "pass" : "fail";
       G.statusById[cur.id] = verdict.passed ? "defeated" : "failed";
       G.badge = { text: "", tone: "c-dim" };
@@ -370,7 +368,10 @@ export default function PronunciationTetris() {
       } else {
         G.resultStyle =
           verdict.worstScore >= RED_CUTOFF ? "fail-amber" : "fail-red";
-        G.feedback = { text: failHint(a, multiword), tone: "c-muted" };
+        G.feedback = {
+          text: failHint(a, multiword, G.settings.passThreshold),
+          tone: "c-muted",
+        };
       }
     }
     persistRun();
@@ -595,22 +596,6 @@ export default function PronunciationTetris() {
       });
   };
 
-  const failHint = (a: Assessment, multiword: boolean): string => {
-    if (multiword) {
-      // Breakdown lives INLINE + chips + bar; here only what isn't there.
-      if (weakWords(a, G.settings.passThreshold).length === 0) {
-        return `Casi. Completaste ${a.completeness.toFixed(0)}%, fluidez ${a.fluency.toFixed(0)}%.`;
-      }
-      return "";
-    }
-    const phons = a.words[0]?.phonemes ?? [];
-    if (phons.length === 0) return "Casi. Afiná un poquito y de nuevo.";
-    const worst = phons.reduce((x, y) => (y.accuracy < x.accuracy ? y : x));
-    const base = `Enfocate en [${worst.phoneme}] (${worst.accuracy.toFixed(0)}%)`;
-    const tip = phonemeHint(worst.phoneme);
-    return tip ? `${base}: ${tip}` : base;
-  };
-
   const requestTip = (a: Assessment) => {
     const t = current();
     if (!t) return;
@@ -658,39 +643,23 @@ export default function PronunciationTetris() {
     const threshold = G.settings.passThreshold;
     G.lastAssessment = a; // feeds inline feedback (sentence or phonemes)
 
-    // Breakdown for VERDICT: per word (sentence/paragraph) or per phoneme.
-    // Only REFERENCE words judge the strict rule — insertions (extra words,
-    // e.g. an echoed double-read) would score 0 and veto an otherwise clean
-    // attempt. They stay visible ("dijiste de más") and still block the
-    // near-miss rescue via the recognized-text match. Deliberate divergence
-    // from desktop, which counts them.
-    let units: Array<[string, number]>;
+    const units = assessmentUnits(a, multiword);
     if (multiword) {
-      units = a.words
-        .filter((w) => !w.errorType.includes("Insertion"))
-        .map((w) => [w.word, w.accuracy]);
       // Per-word error counter: +1 for those below threshold; those that DO
       // reach it leave the list (mastered). Basis of R mode.
-      const errs = curErrors();
-      for (const w of a.words) {
-        if (w.errorType.includes("Insertion")) continue;
-        if (w.accuracy < threshold) errs[w.word] = (errs[w.word] ?? 0) + 1;
-        else delete errs[w.word];
+      const errs = (G.errors[t.id] ??= {});
+      for (const [word, score] of units) {
+        if (score < threshold) errs[word] = (errs[word] ?? 0) + 1;
+        else delete errs[word];
       }
       // Combo: consecutive PERFECT words (>= max(threshold, 97)), spans attempts.
       const perfectBar = Math.max(threshold, 97);
       for (const [, score] of units) {
         G.combo = score >= perfectBar ? G.combo + 1 : 0;
       }
-    } else {
-      units = (a.words[0]?.phonemes ?? []).map((p) => [p.phoneme, p.accuracy]);
     }
 
-    // Target HP = best accuracy achieved (shown in rail).
     G.bestHp[t.id] = Math.max(G.bestHp[t.id] ?? 0, a.accuracy);
-
-    // Pass rule (pure domain in scoring.ts): average over the bar AND no
-    // red units.
     const verdict = judge(units, { accuracy: a.accuracy, threshold });
 
     // Capture PREVIOUS status: distinguishes fresh defeat (grants XP)
@@ -722,8 +691,7 @@ export default function PronunciationTetris() {
       const partial = verdict.worstScore >= RED_CUTOFF;
       G.resultStyle = partial ? "fail-amber" : "fail-red";
       setBadge("", partial ? "c-amber" : "c-red");
-      const tip = failHint(a, multiword);
-      setFeedback(tip);
+      setFeedback(failHint(a, multiword, threshold));
       // DeepSeek tip: only on single words (drill), at phoneme level.
       if (coach().available && !multiword) {
         G.coach = { mode: "loading", text: "" };
@@ -1159,15 +1127,7 @@ export default function PronunciationTetris() {
     if (G.screen === "fail") {
       const a = G.lastAssessment;
       if (!a) return { title: "Probá de nuevo", cls: "c-red", sub: "" };
-      // The bar states WHY you failed, in traffic-light terms: reds veto
-      // the win; otherwise it was the average.
-      const scores =
-        t.kind === "word"
-          ? (a.words[0]?.phonemes ?? []).map((p) => p.accuracy)
-          : a.words
-            .filter((w) => !w.errorType.includes("Insertion"))
-            .map((w) => w.accuracy);
-      const reds = scores.filter((s) => s < RED_CUTOFF).length;
+      const reds = redCount(a, t.kind !== "word");
       const unit = t.kind === "word" ? "sonido" : "palabra";
       return {
         title: "Sigue practicando",
@@ -1808,16 +1768,7 @@ export default function PronunciationTetris() {
                       </div>
                     )}
                     {(() => {
-                      // Score over the bar but blocked by red words: the
-                      // number alone reads as a win, so say why it isn't.
-                      const reds = (isMultiword(t)
-                        ? G.lastAssessment.words
-                            .filter((w) => !w.errorType.includes("Insertion"))
-                            .map((w) => w.accuracy)
-                        : (G.lastAssessment.words[0]?.phonemes ?? []).map(
-                            (p) => p.accuracy,
-                          )
-                      ).filter((s) => s < RED_CUTOFF).length;
+                      const reds = redCount(G.lastAssessment, isMultiword(t));
                       return G.lastAssessment.accuracy >= threshold && reds > 0 ? (
                         <div className="sc-flag">
                           bloqueado por {reds}{" "}

@@ -64,6 +64,15 @@ export function loadRun(): SavedRun | null {
     ) {
       return null;
     }
+    const expectedTargets =
+      data.sentences.length + (data.sentences.length > 1 ? 1 : 0);
+    if (
+      data.status.length !== expectedTargets ||
+      data.bestHp.length !== expectedTargets ||
+      data.errors.length !== expectedTargets
+    ) {
+      return null;
+    }
     return {
       sentences: data.sentences,
       index: data.index,

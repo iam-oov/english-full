@@ -32,7 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsVoice: "en-US-AndrewNeural",
   ttsPitch: "0%",
   ttsRate: "0%",
-  passThreshold: 94,
+  passThreshold: 85,
   nearMissMargin: 5,
   cefrLevel: "B2",
   deepseekKey: "",

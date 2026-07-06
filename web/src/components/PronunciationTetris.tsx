@@ -24,6 +24,7 @@ import { useEffect, useReducer, useRef } from "react";
 import {
   ArrowRight,
   Brain,
+  Check,
   CornerUpLeft,
   Crown,
   Headphones,
@@ -43,13 +44,12 @@ import {
   isContinuous,
   isLongForm,
   isMultiword,
-  normalizeText,
   phonemeHint,
   makeWord,
   splitSentences,
   type Target,
 } from "../lib/game";
-import { judge } from "../lib/scoring";
+import { judge, RED_CUTOFF } from "../lib/scoring";
 import { alignWords, type Alignment } from "../lib/align";
 import {
   DEFAULT_SETTINGS,
@@ -245,16 +245,16 @@ export default function PronunciationTetris() {
     const practice =
       G.practiceOriginId !== null && drill.length > 0
         ? {
-            origin: Math.max(
-              0,
-              base.findIndex((x) => x.id === G.practiceOriginId),
-            ),
-            words: drill.map((x) => x.reference),
-            pos:
-              cur && cur.kind === "word"
-                ? Math.max(0, drill.findIndex((x) => x.id === cur.id))
-                : 0,
-          }
+          origin: Math.max(
+            0,
+            base.findIndex((x) => x.id === G.practiceOriginId),
+          ),
+          words: drill.map((x) => x.reference),
+          pos:
+            cur && cur.kind === "word"
+              ? Math.max(0, drill.findIndex((x) => x.id === cur.id))
+              : 0,
+        }
         : null;
     saveRun({
       sentences,
@@ -342,6 +342,37 @@ export default function PronunciationTetris() {
         ? (saved.feedbackTone as Tone)
         : "c-muted",
     };
+
+    // Re-judge the restored attempt under CURRENT rules/threshold: a verdict
+    // persisted before a rule or settings change must not survive as-is.
+    const cur = G.targets[G.index];
+    const a = G.lastAssessment;
+    if (a && cur && (G.screen === "fail" || G.screen === "pass")) {
+      const multiword = isMultiword(cur);
+      const units: Array<[string, number]> = multiword
+        ? a.words
+          .filter((w) => !w.errorType.includes("Insertion"))
+          .map((w) => [w.word, w.accuracy])
+        : (a.words[0]?.phonemes ?? []).map((p) => [p.phoneme, p.accuracy]);
+      const verdict = judge(units, {
+        accuracy: a.accuracy,
+        threshold: G.settings.passThreshold,
+      });
+      G.screen = verdict.passed ? "pass" : "fail";
+      G.statusById[cur.id] = verdict.passed ? "defeated" : "failed";
+      G.badge = { text: "", tone: "c-dim" };
+      if (verdict.passed) {
+        G.resultStyle = "pass";
+        G.feedback = {
+          text: `Superaste el umbral (${G.settings.passThreshold.toFixed(0)}%) sin ${multiword ? "palabras" : "sonidos"} en rojo.`,
+          tone: "c-muted",
+        };
+      } else {
+        G.resultStyle =
+          verdict.worstScore >= RED_CUTOFF ? "fail-amber" : "fail-red";
+        G.feedback = { text: failHint(a, multiword), tone: "c-muted" };
+      }
+    }
     persistRun();
     return true;
   };
@@ -628,13 +659,18 @@ export default function PronunciationTetris() {
     G.lastAssessment = a; // feeds inline feedback (sentence or phonemes)
 
     // Breakdown for VERDICT: per word (sentence/paragraph) or per phoneme.
+    // Only REFERENCE words judge the strict rule — insertions (extra words,
+    // e.g. an echoed double-read) would score 0 and veto an otherwise clean
+    // attempt. They stay visible ("dijiste de más") and still block the
+    // near-miss rescue via the recognized-text match. Deliberate divergence
+    // from desktop, which counts them.
     let units: Array<[string, number]>;
     if (multiword) {
-      units = a.words.map((w) => [w.word, w.accuracy]);
+      units = a.words
+        .filter((w) => !w.errorType.includes("Insertion"))
+        .map((w) => [w.word, w.accuracy]);
       // Per-word error counter: +1 for those below threshold; those that DO
-      // reach it leave the list (mastered). Basis of R mode. INSERTIONS
-      // (extra words) don't enter: they aren't sentence words, drilling them
-      // makes no sense. They DO count for verdict (units), same as desktop.
+      // reach it leave the list (mastered). Basis of R mode.
       const errs = curErrors();
       for (const w of a.words) {
         if (w.errorType.includes("Insertion")) continue;
@@ -653,14 +689,9 @@ export default function PronunciationTetris() {
     // Target HP = best accuracy achieved (shown in rail).
     G.bestHp[t.id] = Math.max(G.bestHp[t.id] ?? 0, a.accuracy);
 
-    // Pass rule (pure domain in scoring.ts).
-    const recognizedOk = normalizeText(a.recognizedText) === normalizeText(t.reference);
-    const verdict = judge(units, {
-      accuracy: a.accuracy,
-      recognizedOk,
-      threshold,
-      nearMissMargin: G.settings.nearMissMargin,
-    });
+    // Pass rule (pure domain in scoring.ts): average over the bar AND no
+    // red units.
+    const verdict = judge(units, { accuracy: a.accuracy, threshold });
 
     // Capture PREVIOUS status: distinguishes fresh defeat (grants XP)
     // from re-passing something already defeated (no farming).
@@ -679,35 +710,18 @@ export default function PronunciationTetris() {
       flash("green");
       setBadge(`✓ ¡Derrotada! · ${a.accuracy.toFixed(0)}%`, "c-green");
       G.resultStyle = "pass";
-      if (verdict.byRecognition) {
-        setFeedback(
-          `Cerca (≥ ${(threshold - G.settings.nearMissMargin).toFixed(0)}%) y te entendí perfecto. ✓`,
-        );
-      } else {
-        setFeedback(`Todos los sonidos ≥ ${threshold.toFixed(0)}%.`);
-      }
+      setFeedback(
+        `Superaste el umbral (${threshold.toFixed(0)}%) sin ${multiword ? "palabras" : "sonidos"} en rojo.`,
+      );
       coachClear();
     } else {
       G.screen = "fail";
       G.streak = 0;
       G.combo = 0;
       flash("red");
-      // Partial (>= 40) -> amber; far off (< 40) -> red.
-      const worstScore = verdict.worstLabel !== null ? verdict.worstScore : a.accuracy;
-      const partial = worstScore >= 40;
+      const partial = verdict.worstScore >= RED_CUTOFF;
       G.resultStyle = partial ? "fail-amber" : "fail-red";
-      const icon = partial ? "△" : "✕";
-      const tone: Tone = partial ? "c-amber" : "c-red";
-      const pending = multiword
-        ? worstWords().length
-        : units.filter(([, s]) => s < threshold).length;
-      const unit = multiword ? "palabra" : "sonido";
-      setBadge(
-        pending > 0
-          ? `${icon} Seguí practicando — te falta${pending > 1 ? "n" : ""} ${pending} ${unit}${pending > 1 ? "s" : ""}`
-          : `${icon} Casi (${a.accuracy.toFixed(0)}%) — afiná un poquito y reintentá`,
-        tone,
-      );
+      setBadge("", partial ? "c-amber" : "c-red");
       const tip = failHint(a, multiword);
       setFeedback(tip);
       // DeepSeek tip: only on single words (drill), at phoneme level.
@@ -1069,8 +1083,13 @@ export default function PronunciationTetris() {
       ? alignWords(t.reference, G.lastAssessment.words)
       : null;
 
+  /** Traffic light: >= threshold plain ink (fine), amber down to the red
+   * cutoff, red below it. Single source for BOTH the inline sentence and the
+   * practice table so the colors never drift apart. */
   const tokClass = (score: number): string =>
-    score >= threshold ? "" : score >= 80 ? " warn" : " bad";
+    score >= threshold ? "" : score >= RED_CUTOFF ? " warn" : " bad";
+  const scoreTone = (score: number): string =>
+    score >= threshold ? "c-accent" : score >= RED_CUTOFF ? "c-amber" : "c-red";
 
   const metaLabel = (): string => {
     if (!t) return "";
@@ -1088,18 +1107,6 @@ export default function PronunciationTetris() {
       base = `Oración ${pos} de ${rows.length}`;
     }
     return `${base} · intento ${Math.max(1, G.wordAttempts)}`;
-  };
-
-  /** Amber chip: how many units fell below threshold on last attempt. */
-  const belowCount = (): number => {
-    const a = G.lastAssessment;
-    if (!a || !t || G.screen !== "fail") return 0;
-    if (isMultiword(t)) {
-      return a.words.filter(
-        (w) => !w.errorType.includes("Insertion") && w.accuracy < threshold,
-      ).length;
-    }
-    return (a.words[0]?.phonemes ?? []).filter((p) => p.accuracy < threshold).length;
   };
 
   const chromeLine = (): string => {
@@ -1131,15 +1138,15 @@ export default function PronunciationTetris() {
   const primaryLabel = (): string => {
     if (G.busyLabel) return G.busyLabel;
     switch (G.screen) {
-      case "pass": return "Siguiente";
+      case "pass": return nextLabel();
       case "fail": return `Reintentar ${thingLabel().replace(/^(el|la) /, "")}`;
       default: return "Hablar ahora";
     }
   };
 
-  /** Bottom action-bar text. Only for pre-attempt states: the READY
-   * instruction and recording traffic light. Post-attempt verdicts live
-   * in stage pill, next to sentence they talk about. */
+  /** Bottom action-bar text. READY instruction, recording traffic light and
+   * the FAIL call-to-practice ("6b"). On PASS the bar shows buttons only —
+   * the celebration card carries the verdict copy. */
   const barContent = (): { title: string; cls: string; sub: string } => {
     if (!t) return { title: "", cls: "c-fg", sub: "" };
     if (G.screen === "recording") {
@@ -1147,6 +1154,28 @@ export default function PronunciationTetris() {
         title: G.badge.text,
         cls: `${G.badge.tone}${G.badge.live ? " live" : ""}`,
         sub: G.feedback.text,
+      };
+    }
+    if (G.screen === "fail") {
+      const a = G.lastAssessment;
+      if (!a) return { title: "Probá de nuevo", cls: "c-red", sub: "" };
+      // The bar states WHY you failed, in traffic-light terms: reds veto
+      // the win; otherwise it was the average.
+      const scores =
+        t.kind === "word"
+          ? (a.words[0]?.phonemes ?? []).map((p) => p.accuracy)
+          : a.words
+            .filter((w) => !w.errorType.includes("Insertion"))
+            .map((w) => w.accuracy);
+      const reds = scores.filter((s) => s < RED_CUTOFF).length;
+      const unit = t.kind === "word" ? "sonido" : "palabra";
+      return {
+        title: "Seguí practicando",
+        cls: "c-fg",
+        sub:
+          reds > 0
+            ? `sacá del rojo ${reds} ${unit}${reds > 1 ? "s" : ""} para derrotar ${thingLabel()}`
+            : `tu promedio quedó en ${a.accuracy.toFixed(0)}%: necesitás ${threshold.toFixed(0)}% o más`,
       };
     }
     if (G.screen !== "ready") return { title: "", cls: "c-fg", sub: "" };
@@ -1158,6 +1187,22 @@ export default function PronunciationTetris() {
           : "Leé la oración completa, fuerte y claro.";
     return { title: "A leer", cls: "c-fg", sub: que };
   };
+
+  /** Celebration card title/CTA ("6a"). */
+  const defeatTitle = (): string =>
+    !t
+      ? ""
+      : t.kind === "boss"
+        ? "¡Jefe derrotado!"
+        : t.kind === "word"
+          ? "¡Palabra derrotada!"
+          : "¡Oración derrotada!";
+  const nextLabel = (): string =>
+    G.index >= G.targets.length - 1
+      ? "Terminar"
+      : t?.kind === "word"
+        ? "Siguiente"
+        : "Siguiente oración";
 
 
   const railRows = (drawer: boolean) => (
@@ -1249,7 +1294,7 @@ export default function PronunciationTetris() {
             </span>
           )}
           <span className="pt-umbral">
-            umbral <b>{threshold.toFixed(0)}%</b>
+            Umbral <b>{threshold.toFixed(0)}%</b>
           </span>
           <button
             className="pt-gear"
@@ -1497,29 +1542,55 @@ export default function PronunciationTetris() {
                   ) : (
                     <p className="pt-sentence" style={{ fontSize: sentenceFontSize() }}>
                       {aligned
-                        ? aligned.tokens.map((tok, i) => (
-                          <span key={i}>
-                            {tok.prefix}
-                            {tok.score ? (
-                              <button
-                                className={`pt-tok${tok.omitted ? " omit" : tokClass(tok.score.accuracy)}`}
-                                tabIndex={-1}
-                                onClick={() => onWordClick(tok.clean)}
-                                title="Clic para oírla"
-                              >
-                                {tok.clean}
-                                {(tok.omitted || tok.score.accuracy < threshold) && (
-                                  <sup>
-                                    {tok.omitted ? "—" : tok.score.accuracy.toFixed(0)}
-                                  </sup>
-                                )}
-                              </button>
-                            ) : (
-                              tok.clean
-                            )}
-                            {tok.suffix}{" "}
-                          </span>
-                        ))
+                        ? aligned.tokens.map((tok, i) => {
+                          // PASS: watch-words (still on the practice list) go
+                          // BLUE — "liked it, keep practicing". Green would
+                          // read as "done" and red would sour the win.
+                          const watch =
+                            tok.score !== null &&
+                            (tok.score.accuracy < threshold ||
+                              curErrors()[tok.clean.toLowerCase()] !== undefined);
+                          const cls =
+                            G.screen === "pass"
+                              ? watch
+                                ? " watch"
+                                : ""
+                              : tok.omitted
+                                ? " omit"
+                                : tok.score
+                                  ? tokClass(tok.score.accuracy)
+                                  : "";
+                          const showSup =
+                            tok.score !== null &&
+                            (G.screen === "pass"
+                              ? watch
+                              : tok.omitted || tok.score.accuracy < threshold);
+                          return (
+                            <span key={i}>
+                              {tok.prefix}
+                              {tok.score ? (
+                                <button
+                                  className={`pt-tok${cls}`}
+                                  tabIndex={-1}
+                                  onClick={() => onWordClick(tok.clean)}
+                                  title="Click para oírla"
+                                >
+                                  {tok.clean}
+                                  {showSup && (
+                                    <sup>
+                                      {tok.omitted && G.screen !== "pass"
+                                        ? "—"
+                                        : tok.score.accuracy.toFixed(0)}
+                                    </sup>
+                                  )}
+                                </button>
+                              ) : (
+                                tok.clean
+                              )}
+                              {tok.suffix}{" "}
+                            </span>
+                          );
+                        })
                         : t.label}
                     </p>
                   )}
@@ -1543,15 +1614,16 @@ export default function PronunciationTetris() {
                 </button>
                 {aligned && (
                   <span className="pt-caption">
-                    clic en una palabra para oírla
+                    Click en una palabra para oírla
                     {aligned.insertions.length > 0 &&
                       ` · dijiste de más: ${aligned.insertions.map((w) => w.word).join(", ")}`}
                   </span>
                 )}
               </div>
 
-              {/* while recording the instruction lives in the action bar */}
-              {G.screen !== "recording" && (
+              {/* feedback line: hidden while recording (bar) and on pass
+                  (the celebration card owns the verdict copy) */}
+              {G.screen !== "recording" && G.screen !== "pass" && (
                 <div
                   className={`pt-feedback ${G.feedback.tone}`}
                   style={{ fontSize: Math.max(11, 14 + G.fontDelta) }}
@@ -1560,60 +1632,200 @@ export default function PronunciationTetris() {
                 </div>
               )}
 
-              {/* DIAGNOSE: verdict + top-3 words + overflow "+N leves". The
-                  verdict pill leads the row — it IS the diagnosis summary,
-                  so the old "N bajo el umbral" count chip became redundant. */}
-              {G.screen !== "recording" &&
-                (((G.screen === "pass" || G.screen === "fail") && G.badge.text) ||
-                  (isMultiword(t) && worstWords().length > 0)) && (
-                  <div className="pt-chips">
-                    {(G.screen === "pass" || G.screen === "fail") && G.badge.text && (
-                      <span
-                        className={`pt-pillstatus sm ${G.resultStyle !== "idle" ? G.resultStyle : "fail-red"} ${G.badge.tone}`}
-                      >
-                        {G.badge.text}
-                      </span>
-                    )}
-                    {isMultiword(t) && worstWords().length > 0 && (
-                      <>
-                        {(G.chipsOpen ? worstWords() : worstWords().slice(0, 3)).map(
-                          ([w, c]) => (
-                            <button
-                              key={w}
-                              className="pt-chip"
-                              tabIndex={-1}
-                              title="Clic para oírla"
-                              onClick={() => onWordClick(w)}
-                            >
-                              {w} ×{c}
-                            </button>
-                          ),
-                        )}
-                        {worstWords().length > 3 && (
-                          <button
-                            className="pt-chip chip-more"
-                            tabIndex={-1}
-                            onClick={() => {
-                              G.chipsOpen = !G.chipsOpen;
-                              rerender();
-                            }}
-                          >
-                            {G.chipsOpen
-                              ? "− menos"
-                              : `+${worstWords().length - 3} leves`}
-                          </button>
-                        )}
-                        <button
-                          className="pt-chip chip-clear"
-                          tabIndex={-1}
-                          onClick={onClearErrors}
-                        >
-                          <X size={11} /> limpiar
-                        </button>
-                      </>
-                    )}
+              {/* technical error (no assessment): the pill carries it */}
+              {G.screen === "fail" && !G.lastAssessment && G.badge.text && (
+                <div className={`pt-pillstatus fail-red ${G.badge.tone}`}>
+                  {G.badge.text}
+                </div>
+              )}
+
+              {/* PASS ("6a"): celebration card + dim practice summary */}
+              {G.screen === "pass" && G.lastAssessment && (
+                <>
+                  <div className="pt-celebrate">
+                    <span className="cel-check">
+                      <Check size={22} />
+                    </span>
+                    <span className="cel-pct">
+                      {G.lastAssessment.accuracy.toFixed(0)}
+                      <small>%</small>
+                    </span>
+                    <div className="cel-text">
+                      <div className="cel-title">{defeatTitle()}</div>
+                      {G.feedback.text && (
+                        <div className="cel-sub">{G.feedback.text}</div>
+                      )}
+                    </div>
                   </div>
-                )}
+                  {isMultiword(t) && worstWords().length > 0 && (
+                    <div className="pt-summary-line">
+                      Quedaron {worstWords().length} palabra
+                      {worstWords().length > 1 ? "s" : ""} floja
+                      {worstWords().length > 1 ? "s" : ""} en tu lista de
+                      práctica:{" "}
+                      {worstWords()
+                        .slice(0, 4)
+                        .map(([w, c]) => `${w} ×${c}`)
+                        .join(" · ")}
+                      {" — "}
+                      <button className="pt-link" tabIndex={-1} onClick={onPracticeWorst}>
+                        practicar ahora
+                      </button>
+                      {" · "}
+                      <button className="pt-link" tabIndex={-1} onClick={onRetry}>
+                        reintentar
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* READY: light reminder chips of pending practice words */}
+              {G.screen === "ready" && isMultiword(t) && worstWords().length > 0 && (
+                <div className="pt-chips">
+                  {(G.chipsOpen ? worstWords() : worstWords().slice(0, 3)).map(
+                    ([w, c]) => (
+                      <button
+                        key={w}
+                        className="pt-chip"
+                        tabIndex={-1}
+                        title="Click para oírla"
+                        onClick={() => onWordClick(w)}
+                      >
+                        {w} ×{c}
+                      </button>
+                    ),
+                  )}
+                  {worstWords().length > 3 && (
+                    <button
+                      className="pt-chip chip-more"
+                      tabIndex={-1}
+                      onClick={() => {
+                        G.chipsOpen = !G.chipsOpen;
+                        rerender();
+                      }}
+                    >
+                      {G.chipsOpen ? "− menos" : `+${worstWords().length - 3} leves`}
+                    </button>
+                  )}
+                  <button
+                    className="pt-chip chip-clear"
+                    tabIndex={-1}
+                    onClick={onClearErrors}
+                  >
+                    <X size={11} /> limpiar
+                  </button>
+                </div>
+              )}
+
+              {/* FAIL ("6b"): practice table (~90%) + score number (~10%);
+                  on narrow screens the number jumps on top, full width */}
+              {G.screen === "fail" && G.lastAssessment && (
+                <div className="pt-diag-row">
+                  {isMultiword(t) && worstWords().length > 0 && (
+                    <div className="pt-practice-table">
+                      <div className="ptw-head">
+                        <span className="ptw-title">
+                          <Zap size={12} /> A practicar · {worstWords().length}{" "}
+                          palabra{worstWords().length > 1 ? "s" : ""}
+                        </span>
+                        <button className="pt-link" tabIndex={-1} onClick={onClearErrors}>
+                          <X size={11} /> limpiar lista
+                        </button>
+                      </div>
+                      <div className="ptw-grid">
+                        {(G.chipsOpen ? worstWords() : worstWords().slice(0, 6)).map(
+                          ([w, c], i) => {
+                            const lastW = G.lastAssessment!.words.find(
+                              (x) =>
+                                x.word === w && !x.errorType.includes("Insertion"),
+                            );
+                            const ipa =
+                              lastW && lastW.phonemes.length > 0
+                                ? `/${lastW.phonemes.map((p) => p.phoneme).join("")}/`
+                                : null;
+                            // A word close under the bar reads "casi"
+                            // instead of its fail count — encouragement.
+                            const close =
+                              lastW !== undefined &&
+                              lastW.accuracy >= threshold - 10;
+                            const scoreCls =
+                              lastW === undefined ? "" : scoreTone(lastW.accuracy);
+                            return (
+                              <button
+                                key={w}
+                                className="ptw-row"
+                                tabIndex={-1}
+                                title="Click para oírla"
+                                style={{ animationDelay: `${Math.min(i * 25, 150)}ms` }}
+                                onClick={() => onWordClick(w)}
+                              >
+                                <span className="ptw-main">
+                                  <span className="ptw-word">{w}</span>
+                                  <span className="ptw-sub">
+                                    {close
+                                      ? "casi"
+                                      : `fallada ${c} ${c > 1 ? "veces" : "vez"}`}
+                                    {ipa ? ` · ${ipa}` : ""}
+                                  </span>
+                                </span>
+                                {lastW && (
+                                  <span className={`ptw-score ${scoreCls}`}>
+                                    {lastW.accuracy.toFixed(0)}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          },
+                        )}
+                      </div>
+                      {worstWords().length > 6 && (
+                        <button
+                          className="pt-link ptw-more"
+                          tabIndex={-1}
+                          onClick={() => {
+                            G.chipsOpen = !G.chipsOpen;
+                            rerender();
+                          }}
+                        >
+                          {G.chipsOpen ? "− menos" : `+${worstWords().length - 6} más`}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className="pt-scorecard">
+                    <div className="sc-label">Puntaje</div>
+                    <div className="sc-pct">
+                      {G.lastAssessment.accuracy.toFixed(0)}
+                      <small>%</small>
+                    </div>
+                    {(G.bestHp[t.id] ?? 0) > G.lastAssessment.accuracy && (
+                      <div className="sc-line">
+                        mejor <b>{(G.bestHp[t.id] ?? 0).toFixed(0)}%</b>
+                      </div>
+                    )}
+                    {(() => {
+                      // Score over the bar but blocked by red words: the
+                      // number alone reads as a win, so say why it isn't.
+                      const reds = (isMultiword(t)
+                        ? G.lastAssessment.words
+                            .filter((w) => !w.errorType.includes("Insertion"))
+                            .map((w) => w.accuracy)
+                        : (G.lastAssessment.words[0]?.phonemes ?? []).map(
+                            (p) => p.accuracy,
+                          )
+                      ).filter((s) => s < RED_CUTOFF).length;
+                      return G.lastAssessment.accuracy >= threshold && reds > 0 ? (
+                        <div className="sc-flag">
+                          bloqueado por {reds}{" "}
+                          {isMultiword(t) ? "palabra" : "sonido"}
+                          {reds > 1 ? "s" : ""} en rojo
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                </div>
+              )}
 
               {/* coach tip (DeepSeek) */}
               {G.coach.mode !== "hidden" && (
@@ -1629,7 +1841,7 @@ export default function PronunciationTetris() {
             <aside className="pt-rail">{railRows(false)}</aside>
           </div>
 
-          {/* PRACTICE: action bar at bottom, content varies by state */}
+          {/* PRACTICE: action bar at bottom — always present */}
           <div className="pt-actionbar">
             <div className="footbar-inner">
               {barContent().title && (
@@ -1655,6 +1867,16 @@ export default function PronunciationTetris() {
                       <CornerUpLeft size={14} /> Salir de práctica
                     </button>
                   )}
+                  {G.screen === "pass" && (
+                    <button
+                      className="pt-btn"
+                      tabIndex={-1}
+                      onClick={onRetry}
+                      disabled={G.busy}
+                    >
+                      <RotateCcw size={14} /> Reintentar
+                    </button>
+                  )}
                   {isMultiword(t) && worstWords().length > 0 && (
                     <button
                       className="pt-btn success"
@@ -1666,29 +1888,15 @@ export default function PronunciationTetris() {
                       {worstWords().length > 1 ? "s" : ""}
                     </button>
                   )}
-                  {G.screen === "pass" && (
-                    <button
-                      className="pt-btn"
-                      tabIndex={-1}
-                      onClick={onRetry}
-                      disabled={G.busy}
-                    >
-                      <RotateCcw size={14} /> Reintentar
-                    </button>
-                  )}
                   <button
                     className="pt-btn primary"
                     tabIndex={-1}
                     onClick={onPrimary}
                     disabled={G.busy}
                   >
-                    {!G.busyLabel &&
-                      (G.screen === "pass" ? (
-                        <ArrowRight size={14} />
-                      ) : (
-                        <Mic size={14} />
-                      ))}
+                    {!G.busyLabel && G.screen !== "pass" && <Mic size={14} />}
                     {primaryLabel()}
+                    {!G.busyLabel && G.screen === "pass" && <ArrowRight size={14} />}
                   </button>
                 </>
               )}
@@ -1789,7 +1997,6 @@ function SettingsModal(props: {
         <fieldset>
           <legend>Juego</legend>
           {field("Umbral de aprobado", "passThreshold", { type: "number" })}
-          {field("Margen near-miss", "nearMissMargin", { type: "number" })}
           {field("Nivel CEFR", "cefrLevel", { placeholder: "A1…C2" })}
           <div className="pt-field">
             <label>Tamaño del texto</label>

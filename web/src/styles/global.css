@@ -327,6 +327,9 @@ body {
   cursor: pointer;
 }
 .pt-tok:hover { background: var(--accent-soft); }
+/* "liked it, keep practicing": blue, not green (green would read as done) */
+.pt-tok.watch { background: var(--accent-soft); color: var(--accent); }
+.pt-tok.watch:hover { background: #d9e6ff; }
 .pt-tok.warn { background: var(--amber-soft); color: var(--amber); }
 .pt-tok.warn:hover { background: #f8e7c6; }
 .pt-tok.bad { background: var(--red-soft); color: var(--red); }
@@ -428,6 +431,242 @@ body {
 .pt-chip.chip-clear { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
 .pt-chip.chip-more { background: transparent; color: var(--muted); border: 1px dashed var(--border); }
 .pt-chip.chip-more:hover { color: var(--accent); border-color: var(--accent); }
+
+/* whispered score in the meta line ("6b") */
+.pt-meta .meta-whisper {
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* inline link-style action */
+.pt-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-family: var(--body-font);
+  font-size: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pt-link:hover { text-decoration: underline; }
+
+/* PASS ("6a"): celebration card + dim practice summary */
+.pt-celebrate {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  margin-top: 22px;
+  background: var(--green-soft);
+  border: 1px solid rgba(22, 163, 74, 0.28);
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: var(--shadow-1), 0 0 0 4px rgba(22, 163, 74, 0.07);
+  animation: pt-pop 220ms ease backwards;
+}
+.cel-check {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+}
+.cel-pct {
+  flex: none;
+  color: var(--green);
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.cel-pct small { font-size: 17px; }
+.cel-text { min-width: 0; }
+.cel-title {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 15px;
+}
+.cel-sub {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.pt-summary-line {
+  color: var(--dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* FAIL ("6b"): structured practice table. Full container width; header on a
+ * light strip; cells separated by hairline dividers (real-table look) that
+ * auto-fill up to 6 columns and wrap down as the viewport narrows. */
+.pt-practice-table {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-1);
+  padding: 0;
+  overflow: hidden; /* clips the outer dividers of first row/column cells */
+  animation: pt-pop 220ms ease backwards;
+}
+.ptw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 10px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.ptw-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ptw-head .pt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.ptw-head .pt-link:hover { color: var(--accent); }
+/* min column = max(190px, 1/6 of the row): wraps down on narrow screens
+ * but never exceeds 6 columns on wide ones. Cells carry top+left hairlines;
+ * the grid's -1px offset pushes the outermost ones under the card edge. */
+.ptw-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(190px, calc(100% / 6)), 1fr)
+  );
+  margin: -1px 0 0 -1px;
+}
+.ptw-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  font-family: var(--body-font);
+  text-align: left;
+  cursor: pointer;
+  animation: pt-pop 200ms ease backwards;
+  transition: background-color 140ms ease;
+}
+.ptw-row:hover { background: var(--accent-soft); }
+.ptw-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ptw-word {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.ptw-sub {
+  color: var(--dim);
+  font-size: 11.5px;
+  font-family: var(--ipa-font);
+}
+.ptw-score {
+  flex: none;
+  font-weight: 700;
+  font-size: 12.5px;
+}
+.ptw-more {
+  margin: 0;
+  padding: 8px 16px 10px;
+  font-size: 12px;
+}
+
+/* diagnosis row: practice table (~90%) + score number (~10%) */
+.pt-diag-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+}
+.pt-diag-row .pt-practice-table {
+  flex: 1;
+  min-width: 0;
+}
+.pt-scorecard {
+  flex: 0 0 10%;
+  min-width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  border: 1px solid rgba(47, 107, 255, 0.22);
+  border-radius: 14px;
+  padding: 10px 16px;
+  text-align: center;
+  animation: pt-pop 200ms ease backwards;
+}
+.pt-scorecard .sc-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.pt-scorecard .sc-pct {
+  color: var(--accent);
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.pt-scorecard .sc-flag {
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-top: 4px;
+}
+.pt-scorecard .sc-pct small { font-size: 14px; }
+.pt-scorecard .sc-line {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.pt-scorecard .sc-line b { color: var(--ink); }
+@media (max-width: 700px) {
+  /* number on top (full width), table wraps below */
+  .pt-diag-row { flex-direction: column; }
+  .pt-scorecard {
+    order: -1;
+    flex-basis: auto;
+    width: 100%;
+    flex-direction: row;
+    gap: 10px;
+    padding: 8px 16px;
+  }
+}
 
 /* ------------------------------------------------------------ botones */
 .pt-btn {

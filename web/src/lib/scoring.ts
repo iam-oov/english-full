@@ -1,55 +1,43 @@
-/** The game's pass rule — pure domain. Mirror of `scoring.py`.
+/** Pass rule of the game — pure domain.
  *
- * Two ways to defeat a target:
+ * Deliberate divergence from the desktop `scoring.py`: playtesting showed the
+ * original rules (every unit over the threshold, plus a near-miss rescue)
+ * were illegible in the UI. The web rule matches the traffic-light colors the
+ * player sees:
  *
- *   RULE 1 (strict): ALL sounds (a word's phonemes, or a sentence/boss's
- *     words) must clear the threshold. NOT the average.
+ *   WIN  =  average >= threshold  AND  no unit in the red (< RED_CUTOFF).
  *
- *   RULE 2 (near-miss): if the AVERAGE landed no more than `nearMissMargin`
- *     points BELOW the threshold AND the recognizer heard the correct text,
- *     it passes anyway. It only rescues when the average fell short: if it
- *     is already above the threshold but one sound failed, rule 1 wins.
+ * Amber units (RED_CUTOFF..threshold) don't block as long as the average
+ * clears the bar; a red unit always blocks, even with a high average.
  */
 
 export interface Verdict {
   passed: boolean;
-  /** won via the 2nd way (near-miss), not the strict one */
-  byRecognition: boolean;
-  /** worst-scored sound/word (null if there is no breakdown) */
+  /** worst-scored unit (null when there is no breakdown) */
   worstLabel: string | null;
   worstScore: number;
 }
 
+/** Below this, a unit shows red and vetoes the win. */
+export const RED_CUTOFF = 50;
+
 export function judge(
   units: Array<[string, number]>,
-  opts: {
-    accuracy: number;
-    recognizedOk: boolean;
-    threshold: number;
-    nearMissMargin: number;
-  },
+  opts: { accuracy: number; threshold: number },
 ): Verdict {
-  const { accuracy, recognizedOk, threshold, nearMissMargin } = opts;
+  const { accuracy, threshold } = opts;
 
-  let passedStrict: boolean;
-  let worstLabel: string | null;
-  let worstScore: number;
+  let worstLabel: string | null = null;
+  let worstScore = accuracy;
+  let noRed = true;
   if (units.length > 0) {
-    passedStrict = units.every(([, score]) => score >= threshold);
     const worst = units.reduce((a, b) => (b[1] < a[1] ? b : a));
     [worstLabel, worstScore] = worst;
-  } else {
-    passedStrict = accuracy >= threshold;
-    worstLabel = null;
-    worstScore = accuracy;
+    noRed = worstScore >= RED_CUTOFF;
   }
 
-  const near = threshold - nearMissMargin <= accuracy && accuracy < threshold;
-  const passed = passedStrict || (near && recognizedOk);
-
   return {
-    passed,
-    byRecognition: passed && !passedStrict,
+    passed: accuracy >= threshold && noRed,
     worstLabel,
     worstScore,
   };

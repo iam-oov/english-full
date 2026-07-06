@@ -215,8 +215,16 @@ export class Scorer {
       };
 
       const build = (): Assessment => {
-        if (cancelMsg) return errorAssessment(cancelMsg);
+        if (cancelMsg) {
+          console.error("[scorer] continuous recognition canceled:", cancelMsg);
+          return errorAssessment(cancelMsg);
+        }
         if (words.length === 0) {
+          console.error("[scorer] continuous recognition heard nothing:", {
+            speechDetected: spoke,
+            recognizedTexts: texts,
+            elapsedMs: Math.round(performance.now() - start),
+          });
           return errorAssessment("No te escuché. Probá de nuevo.");
         }
         const accuracy =
@@ -359,12 +367,31 @@ export class Scorer {
   /** Translation of the raw Azure result into our Assessment. */
   private toAssessment(result: sdk.SpeechRecognitionResult): Assessment {
     if (result.reason === sdk.ResultReason.NoMatch) {
+      // The UI shows a friendly message; the real cause goes to the console
+      // (InitialSilenceTimeout = mic silent, BabbleTimeout = only noise, ...).
+      try {
+        const noMatch = sdk.NoMatchDetails.fromResult(result);
+        console.error(
+          "[scorer] Azure NoMatch — reason:",
+          sdk.NoMatchReason[noMatch.reason],
+          {
+            resultText: result.text,
+            durationTicks: result.duration,
+            json: result.properties.getProperty(
+              sdk.PropertyId.SpeechServiceResponse_JsonResult,
+            ),
+          },
+        );
+      } catch (exc) {
+        console.error("[scorer] Azure NoMatch (no details available):", exc);
+      }
       return errorAssessment("No te escuché. Probá de nuevo.");
     }
     if (result.reason === sdk.ResultReason.Canceled) {
       const details = sdk.CancellationDetails.fromResult(result);
       let msg = `Cancelado: ${sdk.CancellationReason[details.reason]}.`;
       if (details.errorDetails) msg += ` ${details.errorDetails}`;
+      console.error("[scorer] Azure Canceled:", msg);
       return errorAssessment(msg);
     }
 

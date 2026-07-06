@@ -5,3 +5,5 @@ dist/
 # El .gitignore de la raíz (plantilla Python) ignora `lib/` como artefacto de
 # build; acá src/lib/ es CÓDIGO FUENTE (los puertos del juego) -> re-incluir.
 !src/lib/
+playwright-report/
+test-results/

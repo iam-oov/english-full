@@ -7,8 +7,8 @@
  * real game: only used when the URL carries ?demo.
  */
 
-import type { Assessment, PhonemeScore, WordScore } from "./types";
-import type { AssessOptions, ScorerPort } from "./ports";
+import type { PhonemeScore, WordScore } from "./types";
+import type { ScorerPort } from "./ports";
 
 const IPA = ["ð", "ɪ", "æ", "ə", "ɹ", "iː", "ʌ", "eɪ", "s", "t", "k", "m", "n", "l"];
 

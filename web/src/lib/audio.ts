@@ -40,20 +40,19 @@ export async function requestMicPermission(): Promise<boolean> {
 
 /** Records `seconds` from the chosen mic and returns a playable URL, or an
  * error message. This is the mic test (Ctrl+T / "Probar" button). */
-export function recordTest(
+export async function recordTest(
   deviceId: string | undefined,
   seconds = 3,
 ): Promise<{ url: string | null; error: string | null }> {
-  return new Promise(async (resolve) => {
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
-      });
-    } catch (exc) {
-      resolve({ url: null, error: `No pude abrir el micrófono: ${String(exc)}` });
-      return;
-    }
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+    });
+  } catch (exc) {
+    return { url: null, error: `No pude abrir el micrófono: ${String(exc)}` };
+  }
+  return new Promise((resolve) => {
     const chunks: Blob[] = [];
     const recorder = new MediaRecorder(stream);
     recorder.ondataavailable = (e) => {

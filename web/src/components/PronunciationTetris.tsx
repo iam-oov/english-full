@@ -2035,7 +2035,18 @@ function SettingsModal(props: {
           <button className="pt-btn" onClick={props.onClose}>
             Cancelar
           </button>
-          <button className="pt-btn primary" onClick={() => props.onSave({ ...draft.current })}>
+          <button
+            className="pt-btn primary"
+            onClick={() => {
+              // Mobile keyboards sneak spaces into pasted keys/regions, and a
+              // "eastus " region breaks the SDK's WebSocket URL (error 1006).
+              const clean = { ...draft.current } as unknown as Record<string, unknown>;
+              for (const [k, v] of Object.entries(clean)) {
+                if (typeof v === "string") clean[k] = v.trim();
+              }
+              props.onSave(clean as unknown as Settings);
+            }}
+          >
             Guardar
           </button>
         </div>

@@ -21,6 +21,18 @@ import type { Settings } from "./config";
 export type StatusCode = "listening" | "speech" | "processing";
 export type OnStatus = (code: StatusCode) => void;
 
+/** A bare "Unable to contact server 1006" gives the player nothing to act
+ * on; append the two usual culprits (region typo / browser shields). */
+function cancelMessage(reason: string, errorDetails?: string): string {
+  let msg = `Cancelado: ${reason}.`;
+  if (errorDetails) msg += ` ${errorDetails}`;
+  if (errorDetails?.includes("Unable to contact server")) {
+    msg +=
+      " — Revisa la región en Ajustes y, si usas Brave u otro bloqueador, desactiva los escudos para este sitio.";
+  }
+  return msg;
+}
+
 export interface AssessOptions {
   onStatus?: OnStatus;
   /** deviceId of the chosen microphone; undefined = system default */
@@ -105,9 +117,11 @@ export class Scorer {
   constructor(private settings: Settings) {}
 
   private speechConfig(longForm: boolean): sdk.SpeechConfig {
+    // Trim defensively: settings saved with a stray space (mobile keyboards)
+    // produce an invalid WebSocket host and a bare 1006 error.
     const config = sdk.SpeechConfig.fromSubscription(
-      this.settings.speechKey,
-      this.settings.speechRegion,
+      this.settings.speechKey.trim(),
+      this.settings.speechRegion.trim(),
     );
     config.speechRecognitionLanguage = this.settings.targetLanguage;
     // More patience to START speaking (default ~5s): avoids the "didn't hear you"
@@ -272,8 +286,7 @@ export class Scorer {
         last = performance.now();
       };
       recognizer.canceled = (_s, e) => {
-        cancelMsg = `Cancelado: ${sdk.CancellationReason[e.reason]}.`;
-        if (e.errorDetails) cancelMsg += ` ${e.errorDetails}`;
+        cancelMsg = cancelMessage(sdk.CancellationReason[e.reason], e.errorDetails);
         finish();
       };
 
@@ -389,8 +402,10 @@ export class Scorer {
     }
     if (result.reason === sdk.ResultReason.Canceled) {
       const details = sdk.CancellationDetails.fromResult(result);
-      let msg = `Cancelado: ${sdk.CancellationReason[details.reason]}.`;
-      if (details.errorDetails) msg += ` ${details.errorDetails}`;
+      const msg = cancelMessage(
+        sdk.CancellationReason[details.reason],
+        details.errorDetails,
+      );
       console.error("[scorer] Azure Canceled:", msg);
       return errorAssessment(msg);
     }

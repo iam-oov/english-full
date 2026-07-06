@@ -547,15 +547,16 @@ body {
 }
 .ptw-head .pt-link:hover { color: var(--accent); }
 /* min column = max(190px, 1/6 of the row): wraps down on narrow screens
- * but never exceeds 6 columns on wide ones. Cells carry top+left hairlines;
- * the grid's -1px offset pushes the outermost ones under the card edge. */
+ * but never exceeds 6 columns on wide ones. Cells carry bottom+right
+ * hairlines (so an incomplete last row still gets its separators) and the
+ * grid's -1px offset pushes the outermost ones under the card edge. */
 .ptw-grid {
   display: grid;
   grid-template-columns: repeat(
     auto-fill,
     minmax(max(190px, calc(100% / 6)), 1fr)
   );
-  margin: -1px 0 0 -1px;
+  margin: 0 -1px -1px 0;
 }
 .ptw-row {
   display: flex;
@@ -564,8 +565,8 @@ body {
   padding: 11px 16px;
   background: transparent;
   border: none;
-  border-top: 1px solid var(--border);
-  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   border-radius: 0;
   font-family: var(--body-font);
   text-align: left;

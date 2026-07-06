@@ -1170,12 +1170,12 @@ export default function PronunciationTetris() {
       const reds = scores.filter((s) => s < RED_CUTOFF).length;
       const unit = t.kind === "word" ? "sonido" : "palabra";
       return {
-        title: "Seguí practicando",
+        title: "Sigue practicando",
         cls: "c-fg",
         sub:
           reds > 0
-            ? `sacá del rojo ${reds} ${unit}${reds > 1 ? "s" : ""} para derrotar ${thingLabel()}`
-            : `tu promedio quedó en ${a.accuracy.toFixed(0)}%: necesitás ${threshold.toFixed(0)}% o más`,
+            ? `saca del rojo ${reds} ${unit}${reds > 1 ? "s" : ""} para derrotar ${thingLabel()}`
+            : `tu promedio quedó en ${a.accuracy.toFixed(0)}%: necesitas ${threshold.toFixed(0)}% o más`,
       };
     }
     if (G.screen !== "ready") return { title: "", cls: "c-fg", sub: "" };

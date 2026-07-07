@@ -659,7 +659,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  border-radius: 999px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--ink);
@@ -689,6 +689,9 @@ body {
 /* coach tip (DeepSeek) */
 .pt-coach {
   width: 100%;
+  /* Flex child of the fixed-height stage: without this it SHRINKS to its
+   * min-height when content overflows and the text spills out of the card. */
+  flex: none;
   text-align: center;
   font-size: 0.9688rem;
   line-height: 1.55;
@@ -986,6 +989,20 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.pt-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.pt-refresh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 0.8438rem;
 }
 .pt-card-label {
   font-size: 0.9062rem;
@@ -1316,4 +1333,11 @@ body {
   .pt-main { padding: 18px 14px 12px; }
   .pt-sentence { font-size: 0.92em; }
   .pt-btn { padding: 8px 14px; font-size: 0.9375rem; }
+
+  /* settings: label above input, controls wrap — nothing clips off-screen */
+  .pt-modal { padding: 18px 16px; }
+  .pt-field { grid-template-columns: 1fr; gap: 4px; margin-top: 12px; }
+  .pt-field-error { grid-column: 1; }
+  .pt-preset-row,
+  .pt-font-controls { flex-wrap: wrap; }
 }

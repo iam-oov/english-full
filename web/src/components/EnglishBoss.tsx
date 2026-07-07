@@ -1421,7 +1421,23 @@ export default function EnglishBoss() {
 
                 {/* right card: paste/type paragraph */}
                 <div className="pt-card">
-                  <div className="pt-card-label">≣ …o pegá un párrafo</div>
+                  <div className="pt-card-head">
+                    <div className="pt-card-label">≣ …o pegá un párrafo</div>
+                    {G.paragraph.trim().length > 0 && (
+                      <button
+                        className="pt-link"
+                        tabIndex={-1}
+                        title="Vaciar el párrafo"
+                        onClick={() => {
+                          G.paragraph = "";
+                          saveParagraph("");
+                          rerender();
+                        }}
+                      >
+                        <X size={11} /> limpiar
+                      </button>
+                    )}
+                  </div>
                   <div className="pt-card-sub">
                     Cada «.» o salto de línea crea un sub-jefe.
                   </div>
@@ -2154,6 +2170,16 @@ function SettingsModal(props: {
           Azure Pronunciation Assessment: necesitás una key de Speech (el tier
           F0 gratis alcanza).
         </p>
+        <div className="pt-refresh-row">
+          <span className="c-muted">Versión {VERSION}</span>
+          <button
+            className="pt-btn sm"
+            title="Recargar la app para traer la versión más reciente (útil en PWA instalada)"
+            onClick={() => window.location.reload()}
+          >
+            <RotateCcw size={13} /> Refresh
+          </button>
+        </div>
         <fieldset>
           <legend>Azure Speech (obligatorio)</legend>
           {field("AZURE_SPEECH_KEY", "speechKey", { type: "password", placeholder: "tu key de Azure Speech" })}

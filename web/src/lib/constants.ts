@@ -23,6 +23,18 @@ export const TTS_RATE = "+10%";
 
 /** Difficulty presets behind the Mid/Senior buttons in Settings. */
 export const LEVEL_PRESETS = [
-  { key: "mid", name: "Mid", passThreshold: 85, redCutoff: 60, endSilenceMs: 2000 },
-  { key: "senior", name: "Senior", passThreshold: 92, redCutoff: 75, endSilenceMs: 1200 },
+  {
+    key: "mid",
+    name: "Mid",
+    passThreshold: 85,
+    redCutoff: 60,
+    endSilenceMs: 2000,
+  },
+  {
+    key: "senior",
+    name: "Senior",
+    passThreshold: 93,
+    redCutoff: 75,
+    endSilenceMs: 1200,
+  },
 ] as const;

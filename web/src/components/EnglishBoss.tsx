@@ -1,4 +1,4 @@
-/** Pronunciation Tetris.
+/** English Boss.
  *
  * Start screen "1d": paragraph or image as input (cards side by side) and
  * microphone + test + Start in a single bar.
@@ -229,7 +229,7 @@ const initialG = (): G => ({
 
 const keyLabel = (action: keyof typeof KEYS): string => KEYS[action].toUpperCase();
 
-export default function PronunciationTetris() {
+export default function EnglishBoss() {
   const g = useRef<G | null>(null);
   if (g.current === null) g.current = initialG();
   const G = g.current;
@@ -768,6 +768,18 @@ export default function PronunciationTetris() {
     startTts(word);
   };
 
+  const onHome = () => {
+    if (G.screen === "input") return;
+    // Home = start sheet. The saved run stays: a refresh restores the game.
+    stopPlayback();
+    G.playingMine = false;
+    G.busy = false;
+    G.busyLabel = null;
+    G.gen += 1;
+    assessAbort.current?.abort();
+    showInput();
+  };
+
   const onPlayMine = () => {
     if (G.screen === "input" || G.screen === "win" || !hasGame()) return;
     if (G.playingMine) {
@@ -1284,14 +1296,16 @@ export default function PronunciationTetris() {
     <div className="pt-app">
       <header className="pt-header">
         <div className="pt-brand">
-          <span className="brand-dot" />
-          Pronunciation Tetris
+          <button className="pt-brand-link" onClick={onHome} title="Ir al inicio">
+            <span className="brand-dot" />
+            English Boss
+          </button>
           <span className="pt-version" title="Versión desplegada">
             {VERSION}
             {import.meta.env.DEV ? "-dev" : ""}
           </span>
           <span className="pt-credit">
-            · Construido por{" "}
+            Construido por{" "}
             <a href="https://github.com/iam-oov/" target="_blank" rel="noreferrer">
               iam-oov
             </a>{" "}

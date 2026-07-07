@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Qué es
 
-**Pronunciation Tetris**: juego web de pronunciación de inglés (Astro + React,
+**English Boss** (antes Pronunciation Tetris): juego web de pronunciación de inglés (Astro + React,
 en `web/`). Pegas un párrafo (o lo extraes de una foto con OCR), el juego lo
 parte en oraciones (sub-jefes) y el párrafo entero es el jefe final. El
 scoring real lo hace **Azure Pronunciation Assessment** (a nivel fonema,
@@ -49,9 +49,9 @@ Puertos y adaptadores; la UI solo conoce los puertos:
 | `lib/game.ts` | Targets, `splitSentences` (Intl.Segmenter + abreviaturas), `KEYS`, pistas IPA, `failHint`. |
 | `lib/align.ts` | Alinea la oración original con las palabras de Azure (omisiones/inserciones/guiones). Invariante: ante desync, un token queda SIN resaltar, nunca corrido. |
 | `lib/run.ts` | Persistencia de la corrida (localStorage, **posicional** sobre los targets — valida longitudes al cargar). |
-| `lib/config.ts`, `lib/progress.ts` | Ajustes y XP/nivel en localStorage. |
+| `lib/config.ts`, `lib/progress.ts` | Ajustes y XP/nivel en localStorage (las llaves conservan el prefijo legado `pronunciation-tetris.` — cambiarlas borraría los datos de todos). |
 | `lib/ocr.ts`, `lib/audio.ts` | Tesseract (import dinámico) y mic test/playback. |
-| `components/PronunciationTetris.tsx` | Toda la UI + máquina de estados. No sabe de Azure/DeepSeek. |
+| `components/EnglishBoss.tsx` | Toda la UI + máquina de estados. No sabe de Azure/DeepSeek. |
 
 ### Patrones clave del componente
 

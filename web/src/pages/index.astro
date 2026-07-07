@@ -2,7 +2,7 @@
 import "@fontsource/atkinson-hyperlegible/400.css";
 import "@fontsource/atkinson-hyperlegible/700.css";
 import "../styles/global.css";
-import PronunciationTetris from "../components/PronunciationTetris";
+import EnglishBoss from "../components/EnglishBoss";
 ---
 
 <!doctype html>
@@ -12,17 +12,17 @@ import PronunciationTetris from "../components/PronunciationTetris";
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Pronunciation Tetris: juego de pronunciación de inglés. Pegá un párrafo, derrotá cada oración y al jefe final superando el umbral en CADA sonido (Azure Pronunciation Assessment)."
+      content="English Boss: juego de pronunciación de inglés. Pega un párrafo, derrota cada oración y al jefe final superando el umbral (Azure Pronunciation Assessment)."
     />
     <link rel="icon" href={`${import.meta.env.BASE_URL.replace(/\/?$/, "/")}favicon.svg`} type="image/svg+xml" />
     <link rel="manifest" href={`${import.meta.env.BASE_URL.replace(/\/?$/, "/")}manifest.webmanifest`} />
     <link rel="apple-touch-icon" href={`${import.meta.env.BASE_URL.replace(/\/?$/, "/")}icon-192.png`} />
     <meta name="theme-color" content="#2f6bff" />
-    <title>Pronunciation Tetris</title>
+    <title>English Boss</title>
   </head>
   <body>
     {/* client:only — el juego usa mic, localStorage y el SDK de Azure: todo
         del navegador, no tiene render de servidor que valga la pena. */}
-    <PronunciationTetris client:only="react" />
+    <EnglishBoss client:only="react" />
   </body>
 </html>

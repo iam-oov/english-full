@@ -1,4 +1,4 @@
-# 🎤 Pronunciation Tetris
+# 🎤 English Boss
 
 Juego web de pronunciación de inglés. Pegas un párrafo (o subes una foto y el
 OCR lo extrae), el juego lo divide en **sub-jefes** (una oración por cada `.`

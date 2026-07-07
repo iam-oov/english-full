@@ -1,4 +1,4 @@
-# Pronunciation Tetris — web
+# English Boss — web
 
 Juego de pronunciación de inglés (Astro + React). Pegas un párrafo, cada
 oración es un sub-jefe y el párrafo entero es el jefe final. Derrotas un
@@ -81,7 +81,7 @@ Puertos y adaptadores — la UI solo conoce los puertos:
 | `src/lib/config.ts` | Ajustes en localStorage. |
 | `src/lib/audio.ts` | Mic test y reproducción local (getUserMedia / MediaRecorder). |
 | `src/lib/demo.ts` | Scorer de mentira para el modo `?demo` (QA y e2e sin Azure). |
-| `src/components/PronunciationTetris.tsx` | Máquina de estados + render. No sabe de Azure/DeepSeek. |
+| `src/components/EnglishBoss.tsx` | Máquina de estados + render. No sabe de Azure/DeepSeek. |
 
 Concurrencia: async/await + un contador `gen` que invalida trabajo asíncrono
 viejo tras un reset o cambio de objetivo, y un `AbortSignal` que suelta el

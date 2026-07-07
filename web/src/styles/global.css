@@ -1,4 +1,4 @@
-/* Pronunciation Tetris — light editorial theme (redesign "3b — Side rail").
+/* English Boss — light editorial theme (redesign "3b — Side rail").
  * Center is for the sentence with inline feedback; the paragraph route lives
  * in a rail on the right. Atkinson Hyperlegible throughout (typography
  * designed for readability: this is a READ-ALOUD game). */
@@ -77,6 +77,18 @@ body {
   font-size: 1rem;
   color: var(--ink);
 }
+.pt-brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.pt-brand-link:hover { color: var(--accent); }
 .brand-dot {
   width: 10px;
   height: 10px;

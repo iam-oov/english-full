@@ -1,6 +1,6 @@
 {
-  "name": "Pronunciation Tetris",
-  "short_name": "PronTetris",
+  "name": "English Boss",
+  "short_name": "English Boss",
   "description": "Juego de pronunciación de inglés: derrota cada oración superando el umbral en cada palabra.",
   "start_url": "./",
   "scope": "./",

@@ -13,8 +13,6 @@ export interface Settings {
   redCutoff: number;
   /** ms of silence that end a sentence recording (words use 40%, boss +500). */
   endSilenceMs: number;
-  /** Student's CEFR level (A1..C2): calibrates the LLM tips. */
-  cefrLevel: string;
   /** DeepSeek (LLM) is OPTIONAL: without a key, static hints and that's it. */
   deepseekKey: string;
   deepseekModel: string;
@@ -28,7 +26,6 @@ export const DEFAULT_SETTINGS: Settings = {
   passThreshold: 85,
   redCutoff: 50,
   endSilenceMs: 1500,
-  cefrLevel: "B2",
   deepseekKey: "",
   deepseekModel: "deepseek-chat",
   deepseekBaseUrl: "https://api.deepseek.com",

@@ -589,7 +589,6 @@ export default function PronunciationTetris() {
         a.recognizedText,
         G.wordAttempts,
         G.totalAttempts,
-        G.settings.cefrLevel,
       )
       .then((tip) => {
         if (myGen !== G.gen || G.screen !== "fail") return;

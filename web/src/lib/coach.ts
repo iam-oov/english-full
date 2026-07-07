@@ -61,13 +61,13 @@ export class Coach {
     recognized: string,
     wordAttempts = 1,
     totalAttempts = 1,
-    level = "B2",
   ): Promise<string | null> {
     const system =
-      `Sos un profesor de pronunciacion de ingles para un hispanohablante ` +
-      `de nivel ${level} (CEFR). Hablas en espanol rioplatense, calido y ` +
-      `directo. Tus consejos son cortos, concretos y accionables, y NUNCA ` +
-      `repetis el mismo consejo: cada vez probas un angulo distinto.`;
+      `Eres un profesor de pronunciacion de ingles para un hispanohablante ` +
+      `que va rumbo al nivel C1 (CEFR): se exigente con los matices, no ` +
+      `simplifiques de mas. Hablas en espanol mexicano, calido y directo. ` +
+      `Tus consejos son cortos, concretos y accionables, y NUNCA repites ` +
+      `el mismo consejo: cada vez pruebas un angulo distinto.`;
     const detalle =
       phonemes.map(([ph, score]) => `${ph} ${score.toFixed(0)}%`).join(", ") ||
       "s/d";
@@ -80,7 +80,7 @@ export class Coach {
       `Dale UN consejo corto (maximo 2 frases) enfocado SOLO en el/los ` +
       `sonido(s) mas flojo(s): como posicionar boca/lengua y una palabra de ` +
       `practica. IMPORTANTE: si ya lleva varios intentos con esta palabra, ` +
-      `CAMBIA el enfoque (no repitas): proba con un par minimo, una analogia ` +
+      `CAMBIA el enfoque (no repitas): prueba con un par minimo, una analogia ` +
       `con un sonido del espanol, un truco fisico distinto, u otra palabra de ` +
       `practica. Sin saludos ni introducciones, directo al consejo.`;
     const content = await this.chat(system, user, 0.85);

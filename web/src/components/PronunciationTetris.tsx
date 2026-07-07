@@ -1753,8 +1753,8 @@ export default function PronunciationTetris() {
                                         e.stopPropagation();
                                         void playClip(
                                           G.lastAudioUrl!,
-                                          lastW.offsetMs! - 150,
-                                          lastW.durationMs! + 400,
+                                          lastW.offsetMs! - 100,
+                                          lastW.durationMs! + 300,
                                         );
                                       }}
                                     >

@@ -82,6 +82,5 @@ Puertos y adaptadores; la UI solo conoce los puertos:
   desde la raíz.
 - PRs que tocan `web/` → `.github/workflows/test.yml` (lint + check + vitest
   + build + e2e).
-- El badge de versión (v1.0.N) se calcula como commits de `main` menos el
-  ancla (commit #32). **No reescribir la historia de `main`** o el número se
-  corre.
+- La versión del badge vive en **`web/version.ts`** (única fuente): para
+  subirla, editar ese archivo. En dev el badge agrega el sufijo `-dev`.

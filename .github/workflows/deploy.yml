@@ -25,9 +25,6 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Full history: the version is derived from the commit count.
-          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -41,16 +38,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # v1.0.0 anchored at commit #32 (the commit that introduced versioning);
-      # each commit deployed afterwards bumps the patch by one. Tied to the
-      # history, so manual re-runs don't inflate the version.
-      - id: version
-        run: echo "version=v1.0.$(( $(git rev-list --count HEAD) - 32 ))" >> "$GITHUB_OUTPUT"
-
       - run: pnpm build
         env:
           GITHUB_PAGES: "true"
-          PUBLIC_BUILD_VERSION: ${{ steps.version.outputs.version }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

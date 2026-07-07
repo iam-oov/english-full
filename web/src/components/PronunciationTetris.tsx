@@ -87,6 +87,7 @@ import {
 } from "../lib/audio";
 import { cleanOcrText, extractTextFromImage } from "../lib/ocr";
 import { clearRun, loadRun, saveRun, type SavedRun } from "../lib/run";
+import { VERSION } from "../../version";
 import { assessmentOk, type Assessment } from "../lib/types";
 
 type Screen = "input" | "ready" | "recording" | "fail" | "pass" | "win";
@@ -1207,7 +1208,8 @@ export default function PronunciationTetris() {
           <span className="brand-dot" />
           Pronunciation Tetris
           <span className="pt-version" title="Versión desplegada">
-            {import.meta.env.PUBLIC_BUILD_VERSION ?? "dev"}
+            {VERSION}
+            {import.meta.env.DEV ? "-dev" : ""}
           </span>
           <span className="pt-credit">
             · Construido por{" "}

@@ -8,17 +8,9 @@ export interface Settings {
   level: Level;
   speechKey: string;
   speechRegion: string;
-  targetLanguage: string;
-  ttsVoice: string;
-  /** voice pitch: '+10%', '-15%', '0%', 'high', 'low'... */
-  ttsPitch: string;
-  /** rate: '+0%', '-10%', 'slow', 'fast'... */
-  ttsRate: string;
   passThreshold: number;
   /** A unit scoring at or below this shows red and vetoes the win. */
   redCutoff: number;
-  /** 2nd way to defeat: average within <= margin of threshold + correct text. */
-  nearMissMargin: number;
   /** ms of silence that end a sentence recording (words use 40%, boss +500). */
   endSilenceMs: number;
   /** Student's CEFR level (A1..C2): calibrates the LLM tips. */
@@ -33,13 +25,8 @@ export const DEFAULT_SETTINGS: Settings = {
   level: "custom",
   speechKey: "",
   speechRegion: "",
-  targetLanguage: "en-US",
-  ttsVoice: "en-US-AndrewNeural",
-  ttsPitch: "0%",
-  ttsRate: "0%",
   passThreshold: 85,
   redCutoff: 50,
-  nearMissMargin: 5,
   endSilenceMs: 1500,
   cefrLevel: "B2",
   deepseekKey: "",

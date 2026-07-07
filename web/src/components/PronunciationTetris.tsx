@@ -2035,10 +2035,6 @@ function SettingsModal(props: {
           <legend>Azure Speech (obligatorio)</legend>
           {field("AZURE_SPEECH_KEY", "speechKey", { type: "password", placeholder: "tu key de Azure Speech" })}
           {field("Región", "speechRegion", { placeholder: "p. ej. eastus" })}
-          {field("Idioma", "targetLanguage")}
-          {field("Voz TTS", "ttsVoice")}
-          {field("Tono (pitch)", "ttsPitch", { placeholder: "0%, +10%, -15%…" })}
-          {field("Velocidad (rate)", "ttsRate", { placeholder: "0%, -10%, slow…" })}
           <div className="pt-field">
             <label></label>
             <div className="pt-conn-test">

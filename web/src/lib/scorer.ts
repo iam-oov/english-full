@@ -16,6 +16,13 @@ import type { AssessOptions, OnStatus, ScorerPort } from "./ports";
 
 export type { AssessOptions, OnStatus, StatusCode } from "./ports";
 
+/** Fixed voice profile — too much knobs for a normal user, so it left
+ * the settings UI. Tweak here if the voice ever needs to change. */
+const TARGET_LANGUAGE = "en-US";
+const TTS_VOICE = "en-US-AndrewNeural";
+const TTS_PITCH = "0%";
+const TTS_RATE = "+10%";
+
 /** A bare "Unable to contact server 1006" gives the player nothing to act
  * on; append the two usual culprits (region typo / browser shields). */
 function cancelMessage(reason: string, errorDetails?: string): string {
@@ -130,7 +137,7 @@ export class Scorer implements ScorerPort {
       this.settings.speechKey.trim(),
       this.settings.speechRegion.trim(),
     );
-    config.speechRecognitionLanguage = this.settings.targetLanguage;
+    config.speechRecognitionLanguage = TARGET_LANGUAGE;
     // More patience to START speaking (default ~5s): avoids the "didn't hear you"
     // while the mic was still connecting.
     config.setProperty(
@@ -342,7 +349,7 @@ export class Scorer implements ScorerPort {
     });
   }
 
-  /** SSML with the configured voice, PITCH and RATE. */
+  /** SSML with the fixed voice profile. */
   private buildSsml(text: string): string {
     const safe = text
       .replace(/&/g, "&amp;")
@@ -350,9 +357,9 @@ export class Scorer implements ScorerPort {
       .replace(/>/g, "&gt;");
     return (
       '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" ' +
-      `xml:lang="${this.settings.targetLanguage}">` +
-      `<voice name="${this.settings.ttsVoice}">` +
-      `<prosody rate="${this.settings.ttsRate}" pitch="${this.settings.ttsPitch}">` +
+      `xml:lang="${TARGET_LANGUAGE}">` +
+      `<voice name="${TTS_VOICE}">` +
+      `<prosody rate="${TTS_RATE}" pitch="${TTS_PITCH}">` +
       `${safe}</prosody></voice></speak>`
     );
   }

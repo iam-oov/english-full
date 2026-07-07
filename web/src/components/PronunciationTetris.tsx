@@ -58,7 +58,13 @@ import {
   scoreBand,
 } from "../lib/scoring";
 import { alignWords, type Alignment } from "../lib/align";
-import { LEVEL_PRESETS, MIN_SILENCE_MS, MIN_THRESHOLD } from "../lib/constants";
+import {
+  CLIP_PAD_AFTER_MS,
+  CLIP_PAD_BEFORE_MS,
+  LEVEL_PRESETS,
+  MIN_SILENCE_MS,
+  MIN_THRESHOLD,
+} from "../lib/constants";
 import {
   DEFAULT_SETTINGS,
   clampRedCutoff,
@@ -1780,8 +1786,10 @@ export default function PronunciationTetris() {
                                         stopPlayback();
                                         void playClip(
                                           G.lastAudioUrl!,
-                                          lastW.offsetMs! - 50,
-                                          lastW.durationMs! + 250,
+                                          lastW.offsetMs! - CLIP_PAD_BEFORE_MS,
+                                          lastW.durationMs! +
+                                            CLIP_PAD_BEFORE_MS +
+                                            CLIP_PAD_AFTER_MS,
                                         );
                                       }}
                                     >

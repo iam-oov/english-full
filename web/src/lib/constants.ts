@@ -21,6 +21,11 @@ export const TTS_VOICE = "en-US-AndrewNeural";
 export const TTS_PITCH = "0%";
 export const TTS_RATE = "+10%";
 
+/** Padding around a word's excerpt of the player's recording: absorbs the
+ * recorder/recognizer start skew without letting neighbor words through. */
+export const CLIP_PAD_BEFORE_MS = 80;
+export const CLIP_PAD_AFTER_MS = 300;
+
 /** Difficulty presets behind the Mid/Senior buttons in Settings. */
 export const LEVEL_PRESETS = [
   {

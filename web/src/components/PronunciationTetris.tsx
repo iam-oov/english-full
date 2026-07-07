@@ -1969,6 +1969,7 @@ export default function PronunciationTetris() {
           }}
           onClose={() => {
             G.showSettings = false;
+            applyUiFont(G.settings); // drop any unsaved font preview
             rerender();
           }}
           onSave={(s) => {
@@ -2220,6 +2221,7 @@ function SettingsModal(props: {
                   draft.current.uiFontDelta = clampUiFontDelta(
                     draft.current.uiFontDelta - 1,
                   );
+                  applyUiFont(draft.current); // live preview; Cancel reverts
                   force();
                 }}
                 title="Achicar todo el texto de la plataforma"
@@ -2237,6 +2239,7 @@ function SettingsModal(props: {
                   draft.current.uiFontDelta = clampUiFontDelta(
                     draft.current.uiFontDelta + 1,
                   );
+                  applyUiFont(draft.current); // live preview; Cancel reverts
                   force();
                 }}
                 title="Agrandar todo el texto de la plataforma"

@@ -68,6 +68,7 @@ import {
 import {
   DEFAULT_SETTINGS,
   clampRedCutoff,
+  clampSentenceFontDelta,
   clampSilence,
   clampThreshold,
   clampUiFontDelta,
@@ -977,7 +978,13 @@ export default function EnglishBoss() {
   const bumpFont = (step: number) => {
     // Doesn't work on start screen: P/L are keys you're typing.
     if (!hasGame() || G.screen === "input") return;
-    G.fontDelta = Math.max(-6, Math.min(16, G.fontDelta + step));
+    setSentenceFont(G.fontDelta + step);
+  };
+
+  const setSentenceFont = (delta: number) => {
+    G.fontDelta = clampSentenceFontDelta(delta);
+    G.settings.sentenceFontDelta = G.fontDelta;
+    saveSettings(G.settings);
     rerender();
   };
 
@@ -1047,6 +1054,7 @@ export default function EnglishBoss() {
   useEffect(() => {
     G.settings = loadSettings();
     applyUiFont(G.settings);
+    G.fontDelta = G.settings.sentenceFontDelta;
     G.stats = loadStats();
     G.paragraph = loadParagraph();
     const saved = loadRun();
@@ -1933,13 +1941,15 @@ export default function EnglishBoss() {
         <SettingsModal
           settings={G.settings}
           fontDelta={G.fontDelta}
-          onFont={(step) => {
-            G.fontDelta = Math.max(-6, Math.min(16, G.fontDelta + step));
+          onFont={(step) => setSentenceFont(G.fontDelta + step)}
+          onUiFont={(delta) => {
+            G.settings.uiFontDelta = delta;
+            saveSettings(G.settings);
+            applyUiFont(G.settings);
             rerender();
           }}
           onClose={() => {
             G.showSettings = false;
-            applyUiFont(G.settings); // drop any unsaved font preview
             rerender();
           }}
           onSave={(s) => {
@@ -1964,6 +1974,7 @@ function SettingsModal(props: {
   settings: Settings;
   fontDelta: number;
   onFont: (step: number) => void;
+  onUiFont: (delta: number) => void;
   onClose: () => void;
   onSave: (s: Settings) => void;
 }) {
@@ -2201,7 +2212,7 @@ function SettingsModal(props: {
                   draft.current.uiFontDelta = clampUiFontDelta(
                     draft.current.uiFontDelta - 1,
                   );
-                  applyUiFont(draft.current); // live preview; Cancel reverts
+                  props.onUiFont(draft.current.uiFontDelta); // saves right away
                   force();
                 }}
                 title="Achicar todo el texto de la plataforma"
@@ -2219,7 +2230,7 @@ function SettingsModal(props: {
                   draft.current.uiFontDelta = clampUiFontDelta(
                     draft.current.uiFontDelta + 1,
                   );
-                  applyUiFont(draft.current); // live preview; Cancel reverts
+                  props.onUiFont(draft.current.uiFontDelta); // saves right away
                   force();
                 }}
                 title="Agrandar todo el texto de la plataforma"

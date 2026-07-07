@@ -31,6 +31,10 @@ export const UI_FONT_BASE_PX = 16;
 export const UI_FONT_DELTA_MIN = -2;
 export const UI_FONT_DELTA_MAX = 8;
 
+/** Reading-text zoom range (Settings.sentenceFontDelta / P-L keys). */
+export const SENTENCE_FONT_DELTA_MIN = -6;
+export const SENTENCE_FONT_DELTA_MAX = 16;
+
 /** A word-gauntlet opponent appears after every N sentences, built from the
  * hardest words so far (capped). */
 export const CHALLENGE_EVERY = 4;

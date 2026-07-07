@@ -6,6 +6,8 @@ import {
   MIN_SILENCE_MS,
   MIN_THRESHOLD,
   RED_CUTOFF,
+  SENTENCE_FONT_DELTA_MAX,
+  SENTENCE_FONT_DELTA_MIN,
   UI_FONT_DELTA_MAX,
   UI_FONT_DELTA_MIN,
 } from "./constants";
@@ -24,6 +26,8 @@ export interface Settings {
   endSilenceMs: number;
   /** px added to the 16px root font: scales the WHOLE platform's text. */
   uiFontDelta: number;
+  /** px added to the reading text only (the sentence/gauntlet/boss). */
+  sentenceFontDelta: number;
   /** DeepSeek (LLM) is OPTIONAL: without a key, static hints and that's it. */
   deepseekKey: string;
   deepseekModel: string;
@@ -38,6 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   redCutoff: RED_CUTOFF,
   endSilenceMs: 1500,
   uiFontDelta: 0,
+  sentenceFontDelta: 0,
   deepseekKey: "",
   deepseekModel: "deepseek-chat",
   deepseekBaseUrl: "https://api.deepseek.com",
@@ -57,6 +62,12 @@ export const clampSilence = (n: number): number =>
 
 export const clampUiFontDelta = (n: number): number =>
   Math.min(UI_FONT_DELTA_MAX, Math.max(UI_FONT_DELTA_MIN, Math.round(n)));
+
+export const clampSentenceFontDelta = (n: number): number =>
+  Math.min(
+    SENTENCE_FONT_DELTA_MAX,
+    Math.max(SENTENCE_FONT_DELTA_MIN, Math.round(n)),
+  );
 
 export const settingsReady = (s: Settings): boolean =>
   s.speechKey.trim().length > 0 && s.speechRegion.trim().length > 0;
@@ -82,6 +93,7 @@ export function loadSettings(): Settings {
     settings.redCutoff = clampRedCutoff(settings.redCutoff);
     settings.endSilenceMs = clampSilence(settings.endSilenceMs);
     settings.uiFontDelta = clampUiFontDelta(settings.uiFontDelta);
+    settings.sentenceFontDelta = clampSentenceFontDelta(settings.sentenceFontDelta);
     if (!["mid", "senior", "custom"].includes(settings.level)) {
       settings.level = "custom";
     }

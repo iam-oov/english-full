@@ -24,7 +24,6 @@ import {
   ArrowRight,
   Brain,
   Check,
-  CornerUpLeft,
   Crown,
   Ear,
   Headphones,
@@ -46,7 +45,6 @@ import {
   isContinuous,
   isLongForm,
   isMultiword,
-  makeWord,
   splitSentences,
   type Target,
 } from "../lib/game";
@@ -59,6 +57,7 @@ import {
 } from "../lib/scoring";
 import { alignWords, type Alignment } from "../lib/align";
 import {
+  CHALLENGE_MAX_WORDS,
   CLIP_PAD_AFTER_MS,
   CLIP_PAD_BEFORE_MS,
   LEVEL_PRESETS,
@@ -149,8 +148,6 @@ interface G {
   /** targetId -> "defeated" | "failed" (absent = not attempted) */
   statusById: Record<number, "defeated" | "failed">;
   returnTargetId: number | null;
-  practiceOriginId: number | null;
-  practiceIds: number[];
   streak: number;
   combo: number;
   runXp: number;
@@ -204,8 +201,6 @@ const initialG = (): G => ({
   errors: {},
   statusById: {},
   returnTargetId: null,
-  practiceOriginId: null,
-  practiceIds: [],
   streak: 0,
   combo: 0,
   runXp: 0,
@@ -274,31 +269,14 @@ export default function EnglishBoss() {
    * drills are ephemeral and resolve to their origin sentence. */
   const persistRun = () => {
     if (!hasGame() || G.screen === "win" || G.screen === "recording") return;
-    const base = G.targets.filter(isMultiword);
+    const base = G.targets;
     const sentences = base
       .filter((x) => x.kind === "sentence")
       .map((x) => x.reference);
     if (sentences.length === 0) return;
-    const cur = current();
-    const activeId = cur && isMultiword(cur) ? cur.id : G.practiceOriginId;
-    const drill = G.targets.filter((x) => G.practiceIds.includes(x.id));
-    const practice =
-      G.practiceOriginId !== null && drill.length > 0
-        ? {
-          origin: Math.max(
-            0,
-            base.findIndex((x) => x.id === G.practiceOriginId),
-          ),
-          words: drill.map((x) => x.reference),
-          pos:
-            cur && cur.kind === "word"
-              ? Math.max(0, drill.findIndex((x) => x.id === cur.id))
-              : 0,
-        }
-        : null;
     saveRun({
       sentences,
-      index: Math.max(0, base.findIndex((x) => x.id === activeId)),
+      index: G.index,
       status: base.map((x) => G.statusById[x.id] ?? null),
       bestHp: base.map((x) => G.bestHp[x.id] ?? 0),
       errors: base.map((x) => ({ ...(G.errors[x.id] ?? {}) })),
@@ -311,7 +289,6 @@ export default function EnglishBoss() {
       assessment: G.lastAssessment
         ? { ...G.lastAssessment, audioUrl: null }
         : null,
-      practice,
     });
   };
 
@@ -333,21 +310,8 @@ export default function EnglishBoss() {
       if (errs && Object.keys(errs).length > 0) G.errors[x.id] = { ...errs };
     });
 
-    const p = saved.practice;
-    if (p && p.origin >= 0 && p.origin < targets.length && p.words.length > 0) {
-      const drill = p.words.map(makeWord);
-      G.practiceOriginId = targets[p.origin]!.id;
-      G.practiceIds = drill.map((d) => d.id);
-      G.targets = [
-        ...targets.slice(0, p.origin),
-        ...drill,
-        ...targets.slice(p.origin),
-      ];
-      G.index = p.origin + Math.min(Math.max(0, p.pos), drill.length - 1);
-    } else {
-      G.targets = targets;
-      G.index = Math.min(Math.max(0, saved.index), targets.length - 1);
-    }
+    G.targets = targets;
+    G.index = Math.min(Math.max(0, saved.index), targets.length - 1);
 
     G.streak = saved.streak;
     G.combo = saved.combo;
@@ -362,8 +326,22 @@ export default function EnglishBoss() {
     G.feedback = { text: "", tone: "c-muted" };
     G.screen = G.lastAssessment ? saved.screen : "ready";
 
-    const cur = G.targets[G.index];
+    let cur = G.targets[G.index];
     const a = G.lastAssessment;
+    if (cur && cur.kind === "challenge") {
+      if (a && (G.screen === "fail" || G.screen === "pass")) {
+        // Rebuild the gauntlet exactly as it was read, from the assessment.
+        const said = a.words
+          .filter((w) => !w.errorType.includes("Insertion"))
+          .map((w) => w.word);
+        cur.reference = said.join(", ");
+        cur.label = cur.reference;
+      } else if (!prepareChallenge(cur)) {
+        G.statusById[cur.id] = "defeated";
+        G.index = Math.min(G.index + 1, G.targets.length - 1);
+        cur = G.targets[G.index];
+      }
+    }
     if (a && cur && (G.screen === "fail" || G.screen === "pass")) {
       const multiword = isMultiword(cur);
       const verdict = judgeAssessment(
@@ -458,21 +436,38 @@ export default function EnglishBoss() {
     showInput();
   };
 
-  const cleanupPractice = () => {
-    const cur = current();
-    const ids = new Set(G.practiceIds);
-    G.targets = G.targets.filter((t) => !ids.has(t.id));
-    G.index = Math.max(0, G.targets.findIndex((t) => t.id === cur?.id));
-    G.practiceOriginId = null;
-    G.practiceIds = [];
+  /** Hardest pending words across the whole run (gauntlet buckets excluded:
+   * misses there already live in the sentence that produced them). */
+  const challengeWords = (): string[] => {
+    const kindById = new Map(G.targets.map((x) => [x.id, x.kind]));
+    const tally: Record<string, number> = {};
+    for (const [id, errs] of Object.entries(G.errors)) {
+      if (kindById.get(Number(id)) === "challenge") continue;
+      for (const [w, c] of Object.entries(errs)) tally[w] = (tally[w] ?? 0) + c;
+    }
+    return Object.entries(tally)
+      .sort((x, y) => y[1] - x[1])
+      .slice(0, CHALLENGE_MAX_WORDS)
+      .map(([w]) => w);
+  };
+
+  /** Materializes the gauntlet on arrival. False = nothing to drill. */
+  const prepareChallenge = (target: Target): boolean => {
+    const words = challengeWords();
+    if (words.length === 0) return false;
+    target.reference = words.join(", ");
+    target.label = target.reference;
+    return true;
   };
 
   const enterReady = () => {
     G.screen = "ready";
-    // If we leave the practice words, remove them to avoid clutter.
     const cur = current();
-    if (G.practiceIds.length > 0 && cur && !G.practiceIds.includes(cur.id)) {
-      cleanupPractice();
+    if (cur && cur.kind === "challenge" && !prepareChallenge(cur)) {
+      // Free pass: no hard words earned yet — the gauntlet bows out.
+      G.statusById[cur.id] = "defeated";
+      if (G.index < G.targets.length - 1) G.index += 1;
+      return enterReady();
     }
     G.gen += 1; // invalidates stale tips/results
     assessAbort.current?.abort();
@@ -495,8 +490,6 @@ export default function EnglishBoss() {
     G.errors = {};
     G.statusById = {};
     G.returnTargetId = null;
-    G.practiceOriginId = null;
-    G.practiceIds = [];
     // Each paragraph is a new run: RPG counters start from zero.
     G.streak = 0;
     G.combo = 0;
@@ -677,12 +670,22 @@ export default function EnglishBoss() {
 
     const units = assessmentUnits(a, multiword);
     if (multiword) {
-      // Per-word error counter: +1 for those below threshold; those that DO
-      // reach it leave the list (mastered). Basis of R mode.
-      const errs = (G.errors[t.id] ??= {});
-      for (const [word, score] of units) {
-        if (score < threshold) errs[word] = (errs[word] ?? 0) + 1;
-        else delete errs[word];
+      if (t.kind === "challenge") {
+        // Gauntlet mastery: a word at/above the bar leaves EVERY list; a miss
+        // keeps living in the sentence that produced it (no double counting).
+        for (const [word, score] of units) {
+          if (score >= threshold) {
+            for (const errs of Object.values(G.errors)) delete errs[word];
+          }
+        }
+      } else {
+        // Per-word error counter: +1 for those below threshold; those that DO
+        // reach it leave the list (mastered). Feeds the word gauntlets.
+        const errs = (G.errors[t.id] ??= {});
+        for (const [word, score] of units) {
+          if (score < threshold) errs[word] = (errs[word] ?? 0) + 1;
+          else delete errs[word];
+        }
       }
       // Combo: consecutive PERFECT words (>= max(threshold, 97)), spans attempts.
       const perfectBar = Math.max(threshold, 97);
@@ -871,36 +874,6 @@ export default function EnglishBoss() {
     }
   };
 
-  const onPracticeWorst = () => {
-    // R: enter/exit practice mode.
-    if (!actionable()) return;
-    const t = current()!;
-    // If already drilling (word) -> exit to origin sentence.
-    if (t.kind === "word" && G.practiceOriginId !== null) {
-      const idx = G.targets.findIndex((x) => x.id === G.practiceOriginId);
-      if (idx >= 0) G.index = idx;
-      enterReady(); // returning to origin, enterReady cleans up
-      return;
-    }
-    if (!isMultiword(t)) return;
-    const worst = worstWords().map(([w]) => w);
-    if (worst.length === 0) {
-      setFeedback("No words to practice here. Read the sentence first.", "c-dim");
-      rerender();
-      return;
-    }
-    // Insert practice words RIGHT before current target.
-    const practice = worst.map(makeWord);
-    G.practiceOriginId = t.id;
-    G.practiceIds = practice.map((p) => p.id);
-    G.targets = [
-      ...G.targets.slice(0, G.index),
-      ...practice,
-      ...G.targets.slice(G.index),
-    ];
-    enterReady();
-  };
-
   const refreshMics = () => {
     listMicrophones().then((options) => {
       G.micOptions = options;
@@ -1060,7 +1033,6 @@ export default function EnglishBoss() {
     else if (k === KEYS.mine) onPlayMine();
     else if (k === KEYS.retry) onRetry();
     else if (k === KEYS.boss) onSkipToBoss();
-    else if (k === KEYS.practice) onPracticeWorst();
     else if (k === KEYS.clear) onClearErrors();
     else if (k === KEYS.prev) navigate(false);
     else if (k === KEYS.next) navigate(true);
@@ -1084,8 +1056,17 @@ export default function EnglishBoss() {
     navigator.mediaDevices?.addEventListener?.("devicechange", refreshMics);
     const onKeyDown = (e: KeyboardEvent) => handleKeyRef.current(e);
     window.addEventListener("keydown", onKeyDown);
+    const setAppHeight = () => {
+      const h = window.visualViewport?.height ?? window.innerHeight;
+      document.documentElement.style.setProperty("--app-h", `${Math.round(h)}px`);
+    };
+    setAppHeight();
+    window.visualViewport?.addEventListener("resize", setAppHeight);
+    window.addEventListener("resize", setAppHeight);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
+      window.visualViewport?.removeEventListener("resize", setAppHeight);
+      window.removeEventListener("resize", setAppHeight);
       navigator.mediaDevices?.removeEventListener?.("devicechange", refreshMics);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1096,11 +1077,8 @@ export default function EnglishBoss() {
   const inGame = hasGame() && G.screen !== "input" && G.screen !== "win";
   const threshold = G.settings.passThreshold;
 
-  /** Rail rows: only multiword targets (not drill words). */
-  const rows = G.targets.filter(isMultiword);
-  /** Active row: current, or ORIGIN sentence if drilling. */
-  const activeRailId =
-    t === null ? null : isMultiword(t) ? t.id : G.practiceOriginId;
+  const rows = G.targets;
+  const activeRailId = t === null ? null : t.id;
 
   /** Alignment for inline feedback (only with assessment and multiword). */
   const aligned: Alignment | null =
@@ -1124,15 +1102,12 @@ export default function EnglishBoss() {
     let base: string;
     if (t.kind === "boss") {
       base = "Jefe final";
-    } else if (t.kind === "word") {
-      const i = G.practiceIds.indexOf(t.id);
-      base =
-        i >= 0
-          ? `Práctica · palabra ${i + 1} de ${G.practiceIds.length}`
-          : "Práctica";
+    } else if (t.kind === "challenge") {
+      base = "Reto de palabras";
     } else {
-      const pos = rows.findIndex((r) => r.id === t.id) + 1;
-      base = `Oración ${pos} de ${rows.length}`;
+      const sentences = rows.filter((r) => r.kind === "sentence");
+      const pos = sentences.findIndex((r) => r.id === t.id) + 1;
+      base = `Oración ${pos} de ${sentences.length}`;
     }
     return `${base} · intento ${Math.max(1, G.wordAttempts)}`;
   };
@@ -1161,7 +1136,7 @@ export default function EnglishBoss() {
 
   /** What the current target is, for bar text. */
   const thingLabel = (): string =>
-    !t ? "" : t.kind === "boss" ? "el párrafo" : t.kind === "word" ? "la palabra" : "la oración";
+    !t ? "" : t.kind === "boss" ? "el párrafo" : t.kind === "challenge" ? "el reto" : "la oración";
 
   const primaryLabel = (): string => {
     if (G.busyLabel) return G.busyLabel;
@@ -1187,8 +1162,8 @@ export default function EnglishBoss() {
     if (G.screen === "fail") {
       const a = G.lastAssessment;
       if (!a) return { title: "Probá de nuevo", cls: "c-red", sub: "" };
-      const reds = redCount(a, t.kind !== "word", G.settings.redCutoff);
-      const unit = t.kind === "word" ? "sonido" : "palabra";
+      const reds = redCount(a, true, G.settings.redCutoff);
+      const unit = "palabra";
       return {
         title: "Sigue practicando",
         cls: "c-fg",
@@ -1202,8 +1177,8 @@ export default function EnglishBoss() {
     const que =
       t.kind === "boss"
         ? "Leé TODO el párrafo, podés pausar entre oraciones."
-        : t.kind === "word"
-          ? "Decí la palabra UNA sola vez, fuerte y claro."
+        : t.kind === "challenge"
+          ? "Tus palabras difíciles: léelas una por una, fuerte y claro."
           : "Leé la oración completa, fuerte y claro.";
     return { title: "A leer", cls: "c-fg", sub: que };
   };
@@ -1214,21 +1189,17 @@ export default function EnglishBoss() {
       ? ""
       : t.kind === "boss"
         ? "¡Jefe derrotado!"
-        : t.kind === "word"
-          ? "¡Palabra derrotada!"
+        : t.kind === "challenge"
+          ? "¡Reto superado!"
           : "¡Oración derrotada!";
   const nextLabel = (): string =>
-    G.index >= G.targets.length - 1
-      ? "Terminar"
-      : t?.kind === "word"
-        ? "Siguiente"
-        : "Siguiente oración";
+    G.index >= G.targets.length - 1 ? "Terminar" : "Siguiente oración";
 
 
   const railRows = (drawer: boolean) => (
     <>
       <div className="pt-rail-h">Párrafo</div>
-      {rows.map((target, k) => {
+      {rows.map((target) => {
         const st = G.statusById[target.id];
         const active = target.id === activeRailId;
         const cls = [
@@ -1252,11 +1223,13 @@ export default function EnglishBoss() {
         const score = G.bestHp[target.id];
         const note = !active
           ? null
-          : t?.kind === "word"
-            ? `practicando: ${t.label}`
-            : G.wordAttempts >= 1
-              ? `${G.wordAttempts} intento${G.wordAttempts > 1 ? "s" : ""}`
-              : null;
+          : G.wordAttempts >= 1
+            ? `${G.wordAttempts} intento${G.wordAttempts > 1 ? "s" : ""}`
+            : null;
+        const sentenceNo =
+          target.kind === "sentence"
+            ? rows.filter((r) => r.kind === "sentence").findIndex((r) => r.id === target.id) + 1
+            : 0;
         return (
           <button
             key={target.id}
@@ -1269,7 +1242,13 @@ export default function EnglishBoss() {
             }}
           >
             <span className={numCls}>
-              {target.kind === "boss" ? <Crown size={11} /> : k + 1}
+              {target.kind === "boss" ? (
+                <Crown size={11} />
+              ) : target.kind === "challenge" ? (
+                <Zap size={11} />
+              ) : (
+                sentenceNo
+              )}
             </span>
             <span className="row-text">
               {target.kind === "boss"
@@ -1546,43 +1525,21 @@ export default function EnglishBoss() {
                 </button>
               </div>
 
-              {/* READ: speaker + sentence (inline) or word + phonemes */}
+              {/* READ: the speaker lives INSIDE the sentence flow — the
+                  text gets the full stage width. */}
               <div className="pt-readrow">
-                <button
-                  className="pt-speak"
-                  tabIndex={-1}
-                  onClick={onRepeat}
-                  disabled={G.busy}
-                  title={`Escuchar cómo se dice (${keyLabel("correct")})`}
-                >
-                  <Volume2 size={16} />
-                </button>
                 <div className="pt-readbody">
-                  {t.kind === "word" ? (
-                    <>
-                      <p
-                        className="pt-word-big"
-                        style={{ fontSize: Math.max(22, 46 + G.fontDelta * 2) }}
-                      >
-                        {t.label}
-                      </p>
-                      {G.lastAssessment && (
-                        <div className="pt-phons">
-                          {(G.lastAssessment.words[0]?.phonemes ?? []).map((p, i) => (
-                            <span
-                              key={`${p.phoneme}-${i}`}
-                              className={`pt-phon${tokClass(p.accuracy)}`}
-                              style={{ animationDelay: `${Math.min(i * 25, 300)}ms` }}
-                            >
-                              {p.phoneme}
-                              <sup>{p.accuracy.toFixed(0)}</sup>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
+                  {(
                     <p className="pt-sentence" style={{ fontSize: sentenceFontSize() }}>
+                      <button
+                        className="pt-speak inline"
+                        tabIndex={-1}
+                        onClick={onRepeat}
+                        disabled={G.busy}
+                        title={`Escuchar cómo se dice (${keyLabel("correct")})`}
+                      >
+                        <Volume2 size={14} />
+                      </button>{" "}
                       {aligned
                         ? aligned.tokens.map((tok, i) => {
                           const cls = tok.omitted
@@ -1709,10 +1666,7 @@ export default function EnglishBoss() {
                       <button className="pt-link" tabIndex={-1} onClick={onRetry}>
                         reintentar
                       </button>
-                      {" · "}
-                      <button className="pt-link" tabIndex={-1} onClick={onPracticeWorst}>
-                        practicar ahora
-                      </button>
+                      {" · aparecerán en el próximo reto ⚡"}
                     </div>
                   )}
                 </>
@@ -1926,16 +1880,6 @@ export default function EnglishBoss() {
               <span className="bar-spacer" />
               {G.screen !== "recording" && (
                 <>
-                  {t.kind === "word" && G.practiceOriginId !== null && (
-                    <button
-                      className="pt-btn"
-                      tabIndex={-1}
-                      onClick={onPracticeWorst}
-                      disabled={G.busy}
-                    >
-                      <CornerUpLeft size={14} /> Salir de práctica
-                    </button>
-                  )}
                   {G.screen === "pass" && (
                     <button
                       className="pt-btn"
@@ -1944,17 +1888,6 @@ export default function EnglishBoss() {
                       disabled={G.busy}
                     >
                       <RotateCcw size={14} /> Reintentar
-                    </button>
-                  )}
-                  {isMultiword(t) && worstWords().length > 0 && (
-                    <button
-                      className="pt-btn success"
-                      tabIndex={-1}
-                      onClick={onPracticeWorst}
-                      disabled={G.busy}
-                    >
-                      <Zap size={14} /> Practicar {worstWords().length} palabra
-                      {worstWords().length > 1 ? "s" : ""}
                     </button>
                   )}
                   <button

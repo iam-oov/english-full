@@ -6,7 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **English Boss** (antes Pronunciation Tetris): juego web de pronunciación de inglés (Astro + React,
 en `web/`). Pegas un párrafo (o lo extraes de una foto con OCR), el juego lo
-parte en oraciones (sub-jefes) y el párrafo entero es el jefe final. El
+parte en oraciones (sub-jefes) y el párrafo entero es el jefe final. Cada 4
+oraciones se intercala un **reto** (`kind: "challenge"`): las palabras más
+falladas acumuladas se leen como una línea y se juzgan igual que una oración;
+sin palabras pendientes, el reto se salta solo (pase libre). Dominar una
+palabra en el reto (≥ umbral) la saca de todas las listas. El
 scoring real lo hace **Azure Pronunciation Assessment** (a nivel fonema,
 directo desde el navegador con el SDK de JS); un ASR común NO sirve porque
 "corrige" el acento. No hay backend: la key de Azure vive en el localStorage

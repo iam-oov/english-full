@@ -6,12 +6,12 @@
  * Esc / Ctrl+R) or when the run is won.
  *
  * Serialization note: Target ids are runtime-generated (auto-increment), so
- * per-target state is persisted POSITIONALLY over the multiword targets
- * (sentences + final boss), which `buildTargets` rebuilds deterministically
- * from the sentences. Practice word targets are ephemeral and never saved:
- * restoring mid-drill lands you back on the origin sentence.
+ * per-target state is persisted POSITIONALLY over the targets (sentences +
+ * word gauntlets + final boss), which `buildTargets` rebuilds
+ * deterministically from the sentences.
  */
 
+import { CHALLENGE_EVERY } from "./constants";
 import type { Assessment } from "./types";
 
 export interface SavedRun {
@@ -35,8 +35,6 @@ export interface SavedRun {
   screen: "ready" | "fail" | "pass";
   /** Serialized Assessment DTO (audioUrl stripped: blobs don't survive). */
   assessment: Assessment | null;
-  /** Active practice drill: origin row, word queue and position in it. */
-  practice: { origin: number; words: string[]; pos: number } | null;
 }
 
 const STORAGE_KEY = "pronunciation-tetris.run";
@@ -62,7 +60,9 @@ export function loadRun(): SavedRun | null {
       return null;
     }
     const expectedTargets =
-      data.sentences.length + (data.sentences.length > 1 ? 1 : 0);
+      data.sentences.length +
+      Math.floor(data.sentences.length / CHALLENGE_EVERY) +
+      (data.sentences.length > 1 ? 1 : 0);
     if (
       data.status.length !== expectedTargets ||
       data.bestHp.length !== expectedTargets ||
@@ -91,17 +91,6 @@ export function loadRun(): SavedRun | null {
         data.assessment !== null &&
         Array.isArray(data.assessment.words)
           ? data.assessment
-          : null,
-      practice:
-        typeof data.practice === "object" &&
-        data.practice !== null &&
-        typeof data.practice.origin === "number" &&
-        data.practice.origin >= 0 &&
-        data.practice.origin < expectedTargets &&
-        Array.isArray(data.practice.words) &&
-        data.practice.words.every((w: unknown) => typeof w === "string") &&
-        typeof data.practice.pos === "number"
-          ? data.practice
           : null,
     };
   } catch {

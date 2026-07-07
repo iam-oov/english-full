@@ -25,7 +25,6 @@ const run = (over: Partial<SavedRun> = {}): SavedRun => ({
   wordAttempts: 1,
   screen: "fail",
   assessment: null,
-  practice: null,
   ...over,
 });
 
@@ -83,17 +82,25 @@ describe("run persistence", () => {
     expect(loadRun()?.index).toBe(0);
   });
 
-  it("drops a practice block whose origin is out of range", () => {
-    saveRun(run({ practice: { origin: 7, words: ["crop"], pos: 0 } }));
-    const loaded = loadRun();
-    expect(loaded).not.toBeNull();
-    expect(loaded?.practice).toBeNull();
-  });
-
-  it("drops a malformed practice block but keeps the run", () => {
-    saveRun(run({ practice: { origin: 0, words: [1, 2], pos: 0 } as never }));
-    const loaded = loadRun();
-    expect(loaded).not.toBeNull();
-    expect(loaded?.practice).toBeNull();
+  it("counts gauntlet slots in the positional contract", () => {
+    const sentences = ["s1", "s2", "s3", "s4", "s5"];
+    // 5 sentences + 1 gauntlet (after the 4th) + boss = 7 slots.
+    const seven = {
+      status: Array(7).fill(null),
+      bestHp: Array(7).fill(0),
+      errors: Array(7).fill({}),
+    };
+    saveRun(run({ sentences, index: 0, ...seven }));
+    expect(loadRun()).not.toBeNull();
+    saveRun(
+      run({
+        sentences,
+        index: 0,
+        status: Array(6).fill(null),
+        bestHp: Array(6).fill(0),
+        errors: Array(6).fill({}),
+      }),
+    );
+    expect(loadRun()).toBeNull();
   });
 });

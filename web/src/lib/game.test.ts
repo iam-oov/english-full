@@ -64,6 +64,22 @@ describe("buildTargets", () => {
     expect(multi.map((t) => t.kind)).toEqual(["sentence", "sentence", "boss"]);
     expect(multi[2]!.reference).toBe("First. Second?");
   });
+
+  it("weaves a word gauntlet after every 4 sentences", () => {
+    const kinds = buildTargets(["a", "b", "c", "d", "e"]).map((t) => t.kind);
+    expect(kinds).toEqual([
+      "sentence",
+      "sentence",
+      "sentence",
+      "sentence",
+      "challenge",
+      "sentence",
+      "boss",
+    ]);
+    const nine = buildTargets(Array.from({ length: 9 }, (_, i) => `s${i}`));
+    expect(nine.filter((t) => t.kind === "challenge")).toHaveLength(2);
+    expect(nine.find((t) => t.kind === "challenge")!.reference).toBe("");
+  });
 });
 
 describe("normalizeText", () => {

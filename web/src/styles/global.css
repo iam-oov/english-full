@@ -44,7 +44,9 @@ body {
 }
 
 .pt-app {
-  height: 100dvh;
+  /* --app-h follows visualViewport: some Android browsers overgrow 100dvh
+   * and push the bottom bar out of reach. */
+  height: var(--app-h, 100dvh);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -217,6 +219,16 @@ body {
   border-color: var(--accent);
 }
 .pt-speak:disabled { opacity: 0.5; cursor: default; }
+.pt-speak.inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: 0 6px 0 0;
+  vertical-align: -0.35em;
+  font-size: inherit;
+}
 
 /* row below sentence: your answer + caption + font zoom */
 .pt-subrow {
@@ -224,8 +236,7 @@ body {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  margin-left: 52px; /* aligned with the text (speaker width + gap) */
-  width: calc(100% - 52px);
+  width: 100%;
 }
 /* small button variant (row below sentence) */
 .pt-btn.sm {

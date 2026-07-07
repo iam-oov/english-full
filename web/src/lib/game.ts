@@ -1,14 +1,15 @@
 /** Game model — pure domain.
  *
  * Target kinds:
- *   "sentence" -> sub-boss: one paragraph sentence (scored per word)
- *   "boss"     -> final boss: the whole paragraph (continuous recognition)
- *   "word"     -> single word (only in practice mode via R)
+ *   "sentence"  -> sub-boss: one paragraph sentence (scored per word)
+ *   "boss"      -> final boss: the whole paragraph (continuous recognition)
+ *   "challenge" -> word gauntlet: the hardest words so far, read as one line
  */
 
+import { CHALLENGE_EVERY } from "./constants";
 import { weakWords, type Assessment } from "./types";
 
-export type Kind = "sentence" | "boss" | "word";
+export type Kind = "sentence" | "boss" | "challenge";
 
 export interface Target {
   /** stable id for indexing per-target state */
@@ -28,13 +29,14 @@ export const makeSentence = (text: string): Target => ({
 export const makeBoss = (paragraph: string): Target => ({
   id: nextTargetId++, label: paragraph, reference: paragraph, kind: "boss",
 });
-export const makeWord = (w: string): Target => ({
-  id: nextTargetId++, label: w, reference: w, kind: "word",
+/** Placeholder: the reference materializes on arrival from the error stats. */
+export const makeChallenge = (): Target => ({
+  id: nextTargetId++, label: "Reto: tus palabras difíciles", reference: "", kind: "challenge",
 });
 
-/** Scored per word (sentence or boss), not per phoneme. */
+/** Scored per word (every kind reads a full line now). */
 export const isMultiword = (t: Target): boolean =>
-  t.kind === "sentence" || t.kind === "boss";
+  t.kind === "sentence" || t.kind === "boss" || t.kind === "challenge";
 
 /** Tolerates long pauses between words while recognizing (sentence/boss). */
 export const isLongForm = isMultiword;
@@ -89,9 +91,14 @@ function segmentLine(line: string): string[] {
  * split); '?' and '!' ARE kept (they change the intonation being practiced). */
 const stripTrailingDot = (s: string): string => s.replace(/\.+$/, "").trim();
 
-/** Sub-bosses (sentences) + final boss (paragraph, only if there is more than one sentence). */
+/** Sub-bosses (sentences), a word gauntlet after every CHALLENGE_EVERY of
+ * them, + final boss (paragraph, only if there is more than one sentence). */
 export function buildTargets(sentences: string[]): Target[] {
-  const targets = sentences.map(makeSentence);
+  const targets: Target[] = [];
+  sentences.forEach((s, i) => {
+    targets.push(makeSentence(s));
+    if ((i + 1) % CHALLENGE_EVERY === 0) targets.push(makeChallenge());
+  });
   if (sentences.length > 1) {
     // Clean reconstruction: each sentence closes with its own punctuation
     // (or a '.' if it has none), without duplicating the "?." / "!.".
@@ -121,7 +128,6 @@ export const KEYS = {
   mine: "d", // hear YOUR voice (your latest recording)
   retry: "s", // retry (even if you already defeated it)
   boss: "a", // toggle: go to the final boss / come back
-  practice: "r", // practice the target's most-missed words
   clear: "x", // reset the target's practice-word list
   prev: "q", // navigate to the PREVIOUS sub-boss/boss
   next: "w", // navigate to the NEXT sub-boss/boss

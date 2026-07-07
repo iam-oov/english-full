@@ -31,6 +31,11 @@ export const UI_FONT_BASE_PX = 16;
 export const UI_FONT_DELTA_MIN = -2;
 export const UI_FONT_DELTA_MAX = 8;
 
+/** A word-gauntlet opponent appears after every N sentences, built from the
+ * hardest words so far (capped). */
+export const CHALLENGE_EVERY = 4;
+export const CHALLENGE_MAX_WORDS = 8;
+
 /** Difficulty presets behind the Mid/Senior buttons in Settings. */
 export const LEVEL_PRESETS = [
   {

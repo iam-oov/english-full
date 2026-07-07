@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }) => {
   await page.waitForSelector(".pt-entry");
 });
 
-test("full round: ready, fail with diagnosis, practice, pass, navigate", async ({
+test("full round: ready, fail with diagnosis, pass, navigate", async ({
   page,
 }) => {
   await page.fill(".pt-entry", PARA);
@@ -30,14 +30,6 @@ test("full round: ready, fail with diagnosis, practice, pass, navigate", async (
   await expect(scorecard).toContainText("Puntaje");
   await expect(scorecard).not.toContainText("objetivo");
 
-  await page.click("button:has-text('Practicar')");
-  await page.keyboard.press("Space");
-  await page.waitForSelector(".pt-phon", { timeout: 15_000 });
-  await expect(page.locator(".pt-meta")).toContainText("PRÁCTICA", {
-    ignoreCase: true,
-  });
-  await page.click("button:has-text('Salir de práctica')");
-
   await page.keyboard.press("Space");
   await page.waitForSelector(".pt-celebrate", { timeout: 15_000 });
   await expect(page.locator(".pt-celebrate")).toContainText("derrotada");
@@ -51,6 +43,47 @@ test("full round: ready, fail with diagnosis, practice, pass, navigate", async (
     () => document.documentElement.scrollHeight <= window.innerHeight + 1,
   );
   expect(noScroll).toBe(true);
+});
+
+test("the word gauntlet gathers failed words and is beatable", async ({
+  page,
+}) => {
+  await page.fill(".pt-entry", PARA);
+  await page.keyboard.press("Shift+Enter");
+  await expect(page.locator(".pt-actionbar")).toContainText("A leer");
+
+  // Fail sentence 1 so its weak words feed the gauntlet, then move on
+  // without redeeming them.
+  await page.keyboard.press("Space");
+  await page.waitForSelector(".pt-tok", { timeout: 15_000 });
+  await page.keyboard.press("w");
+  await page.keyboard.press("w");
+  await page.keyboard.press("w");
+  await page.keyboard.press("w");
+  await expect(page.locator(".pt-meta")).toContainText("Reto de palabras", {
+    ignoreCase: true,
+  });
+
+  // Demo scorer: first attempt at any reference fails, second passes.
+  await page.keyboard.press("Space");
+  await page.waitForSelector(".pt-tok", { timeout: 15_000 });
+  await page.keyboard.press("Space");
+  await page.waitForSelector(".pt-celebrate", { timeout: 15_000 });
+  await expect(page.locator(".pt-celebrate")).toContainText("Reto superado");
+});
+
+test("a gauntlet with no failed words is a free pass", async ({ page }) => {
+  await page.fill(".pt-entry", PARA);
+  await page.keyboard.press("Shift+Enter");
+  await expect(page.locator(".pt-actionbar")).toContainText("A leer");
+
+  await page.keyboard.press("w");
+  await page.keyboard.press("w");
+  await page.keyboard.press("w");
+  await page.keyboard.press("w");
+  await expect(page.locator(".pt-meta")).toContainText("Jefe final", {
+    ignoreCase: true,
+  });
 });
 
 test("rail drawer on narrow screens", async ({ page }) => {

@@ -6,7 +6,7 @@ const PARA = [
   "Learning a new language takes time and patience.",
 ].join("\n");
 
-test("a refresh restores position, view and practice queue", async ({ page }) => {
+test("a refresh restores position and view", async ({ page }) => {
   await page.goto("/?demo");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -36,16 +36,6 @@ test("a refresh restores position, view and practice queue", async ({ page }) =>
   await expect(page.locator(".pt-meta")).toContainText("INTENTO 1", {
     ignoreCase: true,
   });
-
-  await page.click("button:has-text('Practicar')");
-  await expect(page.locator(".pt-meta")).toContainText("PRÁCTICA", {
-    ignoreCase: true,
-  });
-  await page.reload();
-  await expect(page.locator(".pt-meta")).toContainText("PRÁCTICA", {
-    ignoreCase: true,
-  });
-  await expect(page.locator("button:has-text('Salir de práctica')")).toBeVisible();
 
   await page.keyboard.press("Escape");
   await page.waitForSelector(".pt-start");
@@ -89,7 +79,6 @@ test("a stale verdict is re-judged under current rules on restore", async ({
       error: null,
       audioUrl: null,
     },
-    practice: null,
   };
   await page.goto("/?demo");
   await page.evaluate(

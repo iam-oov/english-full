@@ -716,6 +716,24 @@ body {
   font-weight: 800;
   color: var(--ink);
 }
+.ptw-clip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.ptw-clip:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
 .pt-coach-ipa {
   font-family: var(--ipa-font);
   font-weight: 600;

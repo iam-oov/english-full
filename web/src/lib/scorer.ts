@@ -32,6 +32,9 @@ function cancelMessage(reason: string, errorDetails?: string): string {
 /** Shape of the detailed JSON the service returns (NBest[0]). */
 interface RawWord {
   Word: string;
+  /** 100-ns ticks from the start of the audio stream. */
+  Offset?: number;
+  Duration?: number;
   PronunciationAssessment?: { AccuracyScore?: number; ErrorType?: string };
   Phonemes?: Array<{
     Phoneme: string;
@@ -72,6 +75,8 @@ function parseWords(raw: RawWord[] | undefined): WordScore[] {
       accuracy: w.PronunciationAssessment?.AccuracyScore ?? 0,
       errorType: w.PronunciationAssessment?.ErrorType ?? "None",
       phonemes,
+      offsetMs: w.Offset !== undefined ? w.Offset / 10_000 : undefined,
+      durationMs: w.Duration !== undefined ? w.Duration / 10_000 : undefined,
     };
   });
 }

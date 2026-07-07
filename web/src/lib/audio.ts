@@ -93,3 +93,35 @@ export function playRecording(url: string): Promise<string | null> {
     audio.play().catch((exc) => done(`No pude reproducir: ${String(exc)}`));
   });
 }
+
+/** Plays only [startMs, startMs+durationMs] of a recording. WebAudio instead
+ * of <audio>.currentTime: MediaRecorder blobs seek unreliably (webm without
+ * duration metadata). Returns false if the excerpt can't be played. */
+let clipContext: AudioContext | null = null;
+let clipSource: AudioBufferSourceNode | null = null;
+
+export async function playClip(
+  url: string,
+  startMs: number,
+  durationMs: number,
+): Promise<boolean> {
+  try {
+    clipSource?.stop();
+    clipSource = null;
+    const buf = await (await fetch(url)).arrayBuffer();
+    clipContext ??= new AudioContext();
+    if (clipContext.state === "suspended") await clipContext.resume();
+    const audio = await clipContext.decodeAudioData(buf);
+    const start = Math.min(Math.max(0, startMs / 1000), audio.duration);
+    const dur = Math.min(durationMs / 1000, audio.duration - start);
+    if (dur <= 0.05) return false;
+    const source = clipContext.createBufferSource();
+    source.buffer = audio;
+    source.connect(clipContext.destination);
+    source.start(0, start, dur);
+    clipSource = source;
+    return true;
+  } catch {
+    return false;
+  }
+}

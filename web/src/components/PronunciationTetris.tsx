@@ -26,6 +26,7 @@ import {
   Check,
   CornerUpLeft,
   Crown,
+  Ear,
   Headphones,
   Image as ImageIcon,
   Mic,
@@ -85,6 +86,7 @@ import { createDemoScorer } from "../lib/demo";
 import type { ScorerPort } from "../lib/ports";
 import {
   listMicrophones,
+  playClip,
   playRecording,
   recordTest,
   type MicOption,
@@ -1740,6 +1742,25 @@ export default function PronunciationTetris() {
                                     {ipa ? ` · ${ipa}` : ""}
                                   </span>
                                 </span>
+                                {G.lastAudioUrl &&
+                                  lastW?.offsetMs !== undefined &&
+                                  lastW.durationMs !== undefined && (
+                                    <span
+                                      className="ptw-clip"
+                                      role="button"
+                                      title="Escuchar cómo la dijiste"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void playClip(
+                                          G.lastAudioUrl!,
+                                          lastW.offsetMs! - 150,
+                                          lastW.durationMs! + 400,
+                                        );
+                                      }}
+                                    >
+                                      <Ear size={13} />
+                                    </span>
+                                  )}
                                 {lastW && (
                                   <span className={`ptw-score ${scoreCls}`}>
                                     {lastW.accuracy.toFixed(0)}

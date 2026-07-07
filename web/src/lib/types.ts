@@ -16,6 +16,9 @@ export interface WordScore {
   /** "None", "Omission", "Insertion", "Mispronunciation" */
   errorType: string;
   phonemes: PhonemeScore[];
+  /** Position inside the player's recording, for excerpt playback. */
+  offsetMs?: number;
+  durationMs?: number;
 }
 
 export interface Assessment {

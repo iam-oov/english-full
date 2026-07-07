@@ -26,6 +26,11 @@ export const TTS_RATE = "+10%";
 export const CLIP_PAD_BEFORE_MS = 80;
 export const CLIP_PAD_AFTER_MS = 300;
 
+/** Whole-platform font size = 16px root + Settings.uiFontDelta, clamped. */
+export const UI_FONT_BASE_PX = 16;
+export const UI_FONT_DELTA_MIN = -2;
+export const UI_FONT_DELTA_MAX = 8;
+
 /** Difficulty presets behind the Mid/Senior buttons in Settings. */
 export const LEVEL_PRESETS = [
   {

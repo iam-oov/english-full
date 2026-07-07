@@ -64,12 +64,14 @@ import {
   LEVEL_PRESETS,
   MIN_SILENCE_MS,
   MIN_THRESHOLD,
+  UI_FONT_BASE_PX,
 } from "../lib/constants";
 import {
   DEFAULT_SETTINGS,
   clampRedCutoff,
   clampSilence,
   clampThreshold,
+  clampUiFontDelta,
   loadParagraph,
   loadSettings,
   saveParagraph,
@@ -1060,6 +1062,7 @@ export default function PronunciationTetris() {
 
   useEffect(() => {
     G.settings = loadSettings();
+    applyUiFont(G.settings);
     G.stats = loadStats();
     G.paragraph = loadParagraph();
     const saved = loadRun();
@@ -1971,6 +1974,7 @@ export default function PronunciationTetris() {
           onSave={(s) => {
             G.settings = s;
             saveSettings(s);
+            applyUiFont(s);
             G.showSettings = false;
             rerender();
           }}
@@ -1981,6 +1985,10 @@ export default function PronunciationTetris() {
 }
 
 // ---------------------------------------------------------------- settings
+const applyUiFont = (s: Settings) => {
+  document.documentElement.style.fontSize = `${UI_FONT_BASE_PX + s.uiFontDelta}px`;
+};
+
 function SettingsModal(props: {
   settings: Settings;
   fontDelta: number;
@@ -2203,6 +2211,40 @@ function SettingsModal(props: {
             placeholder: "menos = evalúa más rápido",
             locked,
           })}
+          <div className="pt-field">
+            <label>Tamaño de la plataforma</label>
+            <div className="pt-font-controls">
+              <button
+                className="pt-btn sm"
+                onClick={() => {
+                  draft.current.uiFontDelta = clampUiFontDelta(
+                    draft.current.uiFontDelta - 1,
+                  );
+                  force();
+                }}
+                title="Achicar todo el texto de la plataforma"
+              >
+                A−
+              </button>
+              <span className="font-val">
+                {draft.current.uiFontDelta > 0
+                  ? `+${draft.current.uiFontDelta}`
+                  : draft.current.uiFontDelta}
+              </span>
+              <button
+                className="pt-btn sm"
+                onClick={() => {
+                  draft.current.uiFontDelta = clampUiFontDelta(
+                    draft.current.uiFontDelta + 1,
+                  );
+                  force();
+                }}
+                title="Agrandar todo el texto de la plataforma"
+              >
+                A+
+              </button>
+            </div>
+          </div>
           <div className="pt-field">
             <label>Tamaño de la oración</label>
             <div className="pt-font-controls">

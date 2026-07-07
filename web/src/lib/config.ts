@@ -1,7 +1,14 @@
 /** Game configuration. Settings live in the player's localStorage (the
  * Azure key never leaves their browser, there is no backend). */
 
-import { AMBER_CUTOFF, MIN_SILENCE_MS, MIN_THRESHOLD, RED_CUTOFF } from "./constants";
+import {
+  AMBER_CUTOFF,
+  MIN_SILENCE_MS,
+  MIN_THRESHOLD,
+  RED_CUTOFF,
+  UI_FONT_DELTA_MAX,
+  UI_FONT_DELTA_MIN,
+} from "./constants";
 
 export type Level = "mid" | "senior" | "custom";
 
@@ -15,6 +22,8 @@ export interface Settings {
   redCutoff: number;
   /** ms of silence that end a sentence recording (words use 40%, boss +500). */
   endSilenceMs: number;
+  /** px added to the 16px root font: scales the WHOLE platform's text. */
+  uiFontDelta: number;
   /** DeepSeek (LLM) is OPTIONAL: without a key, static hints and that's it. */
   deepseekKey: string;
   deepseekModel: string;
@@ -28,6 +37,7 @@ export const DEFAULT_SETTINGS: Settings = {
   passThreshold: 85,
   redCutoff: RED_CUTOFF,
   endSilenceMs: 1500,
+  uiFontDelta: 0,
   deepseekKey: "",
   deepseekModel: "deepseek-chat",
   deepseekBaseUrl: "https://api.deepseek.com",
@@ -44,6 +54,9 @@ export const clampRedCutoff = (n: number): number =>
 
 export const clampSilence = (n: number): number =>
   Math.min(10000, Math.max(MIN_SILENCE_MS, Math.round(n)));
+
+export const clampUiFontDelta = (n: number): number =>
+  Math.min(UI_FONT_DELTA_MAX, Math.max(UI_FONT_DELTA_MIN, Math.round(n)));
 
 export const settingsReady = (s: Settings): boolean =>
   s.speechKey.trim().length > 0 && s.speechRegion.trim().length > 0;
@@ -68,6 +81,7 @@ export function loadSettings(): Settings {
     settings.passThreshold = clampThreshold(settings.passThreshold);
     settings.redCutoff = clampRedCutoff(settings.redCutoff);
     settings.endSilenceMs = clampSilence(settings.endSilenceMs);
+    settings.uiFontDelta = clampUiFontDelta(settings.uiFontDelta);
     if (!["mid", "senior", "custom"].includes(settings.level)) {
       settings.level = "custom";
     }

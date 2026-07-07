@@ -1,7 +1,11 @@
 /** Game configuration. Settings live in the player's localStorage (the
  * Azure key never leaves their browser, there is no backend). */
 
+export type Level = "mid" | "senior" | "custom";
+
 export interface Settings {
+  /** mid/senior lock the game numbers to their preset; custom frees them. */
+  level: Level;
   speechKey: string;
   speechRegion: string;
   targetLanguage: string;
@@ -26,6 +30,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  level: "custom",
   speechKey: "",
   speechRegion: "",
   targetLanguage: "en-US",
@@ -54,6 +59,12 @@ export const clampThreshold = (n: number): number =>
 export const clampRedCutoff = (n: number): number =>
   Math.min(79, Math.max(0, Math.round(n)));
 
+/** Under this the mic cuts mid-word; Azure won't take less anyway. */
+export const MIN_SILENCE_MS = 300;
+
+export const clampSilence = (n: number): number =>
+  Math.min(10000, Math.max(MIN_SILENCE_MS, Math.round(n)));
+
 export const settingsReady = (s: Settings): boolean =>
   s.speechKey.trim().length > 0 && s.speechRegion.trim().length > 0;
 
@@ -76,6 +87,10 @@ export function loadSettings(): Settings {
     const settings = merged as unknown as Settings;
     settings.passThreshold = clampThreshold(settings.passThreshold);
     settings.redCutoff = clampRedCutoff(settings.redCutoff);
+    settings.endSilenceMs = clampSilence(settings.endSilenceMs);
+    if (!["mid", "senior", "custom"].includes(settings.level)) {
+      settings.level = "custom";
+    }
     return settings;
   } catch {
     return { ...DEFAULT_SETTINGS };

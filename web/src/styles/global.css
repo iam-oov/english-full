@@ -1161,6 +1161,11 @@ body {
   border-color: var(--red);
   background: var(--red-soft);
 }
+.pt-field input:disabled {
+  color: var(--dim);
+  background: var(--bg);
+  cursor: not-allowed;
+}
 .pt-field-error {
   grid-column: 2;
   color: var(--red);

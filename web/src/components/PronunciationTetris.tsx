@@ -58,8 +58,10 @@ import {
 import { alignWords, type Alignment } from "../lib/align";
 import {
   DEFAULT_SETTINGS,
+  MIN_SILENCE_MS,
   MIN_THRESHOLD,
   clampRedCutoff,
+  clampSilence,
   clampThreshold,
   loadParagraph,
   loadSettings,
@@ -1875,9 +1877,9 @@ export default function PronunciationTetris() {
 
 // ---------------------------------------------------------------- settings
 const LEVEL_PRESETS = [
-  { name: "Mid", passThreshold: 85, redCutoff: 60, endSilenceMs: 2000 },
-  { name: "Senior", passThreshold: 92, redCutoff: 75, endSilenceMs: 1200 },
-];
+  { key: "mid", name: "Mid", passThreshold: 85, redCutoff: 60, endSilenceMs: 2000 },
+  { key: "senior", name: "Senior", passThreshold: 92, redCutoff: 75, endSilenceMs: 1200 },
+] as const;
 
 function SettingsModal(props: {
   settings: Settings;
@@ -1973,12 +1975,21 @@ function SettingsModal(props: {
 
   const draftValid =
     !outOfRange("passThreshold", { min: MIN_THRESHOLD, max: 100 }) &&
-    !outOfRange("redCutoff", { min: 0, max: 79 });
+    !outOfRange("redCutoff", { min: 0, max: 79 }) &&
+    !outOfRange("endSilenceMs", { min: MIN_SILENCE_MS, max: 10000 });
+
+  const locked = draft.current.level !== "custom";
 
   const field = (
     label: string,
     key: keyof Settings,
-    opts: { type?: string; placeholder?: string; min?: number; max?: number } = {},
+    opts: {
+      type?: string;
+      placeholder?: string;
+      min?: number;
+      max?: number;
+      locked?: boolean;
+    } = {},
   ) => {
     const invalid = outOfRange(key, opts);
     return (
@@ -1989,6 +2000,7 @@ function SettingsModal(props: {
           placeholder={opts.placeholder}
           min={opts.min}
           max={opts.max}
+          disabled={opts.locked}
           className={invalid ? "invalid" : undefined}
           aria-invalid={invalid}
           value={String(draft.current[key])}
@@ -2046,27 +2058,32 @@ function SettingsModal(props: {
           <div className="pt-field">
             <label>Nivel</label>
             <div className="pt-preset-row">
-              {LEVEL_PRESETS.map((p) => {
-                const active =
-                  draft.current.passThreshold === p.passThreshold &&
-                  draft.current.redCutoff === p.redCutoff &&
-                  draft.current.endSilenceMs === p.endSilenceMs;
-                return (
-                  <button
-                    key={p.name}
-                    className={`pt-btn sm${active ? " success" : ""}`}
-                    title={`Umbral ${p.passThreshold} · corte de rojo ${p.redCutoff} · silencio ${p.endSilenceMs} ms`}
-                    onClick={() => {
-                      draft.current.passThreshold = p.passThreshold;
-                      draft.current.redCutoff = p.redCutoff;
-                      draft.current.endSilenceMs = p.endSilenceMs;
-                      force();
-                    }}
-                  >
-                    {p.name}
-                  </button>
-                );
-              })}
+              {LEVEL_PRESETS.map((p) => (
+                <button
+                  key={p.key}
+                  className={`pt-btn sm${draft.current.level === p.key ? " success" : ""}`}
+                  title={`Umbral ${p.passThreshold} · corte de rojo ${p.redCutoff} · silencio ${p.endSilenceMs} ms`}
+                  onClick={() => {
+                    draft.current.level = p.key;
+                    draft.current.passThreshold = p.passThreshold;
+                    draft.current.redCutoff = p.redCutoff;
+                    draft.current.endSilenceMs = p.endSilenceMs;
+                    force();
+                  }}
+                >
+                  {p.name}
+                </button>
+              ))}
+              <button
+                className={`pt-btn sm${draft.current.level === "custom" ? " success" : ""}`}
+                title="Tú decides los números"
+                onClick={() => {
+                  draft.current.level = "custom";
+                  force();
+                }}
+              >
+                Custom
+              </button>
             </div>
           </div>
           {field("Umbral de aprobado", "passThreshold", {
@@ -2074,18 +2091,22 @@ function SettingsModal(props: {
             min: 80,
             max: 100,
             placeholder: "mínimo 80",
+            locked,
           })}
           {field("Corte de rojo (derrota por palabra)", "redCutoff", {
             type: "number",
             min: 0,
             max: 79,
             placeholder: "≤ este número, la palabra veta el triunfo",
+            locked,
           })}
           {field("Silencio de corte (ms)", "endSilenceMs", {
             type: "number",
-            placeholder: "1500 — menos = evalúa más rápido",
+            min: 300,
+            max: 10000,
+            placeholder: "menos = evalúa más rápido",
+            locked,
           })}
-          {field("Nivel CEFR", "cefrLevel", { placeholder: "A1…C2" })}
           <div className="pt-field">
             <label>Tamaño de la oración</label>
             <div className="pt-font-controls">
@@ -2146,6 +2167,7 @@ function SettingsModal(props: {
               const s = clean as unknown as Settings;
               s.passThreshold = clampThreshold(s.passThreshold);
               s.redCutoff = clampRedCutoff(s.redCutoff);
+              s.endSilenceMs = clampSilence(s.endSilenceMs);
               props.onSave(s);
             }}
           >

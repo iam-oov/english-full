@@ -49,15 +49,17 @@ import {
   type Target,
 } from "../lib/game";
 import {
-  RED_CUTOFF,
   assessmentUnits,
   judge,
   judgeAssessment,
   redCount,
+  scoreBand,
 } from "../lib/scoring";
 import { alignWords, type Alignment } from "../lib/align";
 import {
   DEFAULT_SETTINGS,
+  clampRedCutoff,
+  clampThreshold,
   loadParagraph,
   loadSettings,
   saveParagraph,
@@ -330,7 +332,12 @@ export default function PronunciationTetris() {
     const a = G.lastAssessment;
     if (a && cur && (G.screen === "fail" || G.screen === "pass")) {
       const multiword = isMultiword(cur);
-      const verdict = judgeAssessment(a, multiword, G.settings.passThreshold);
+      const verdict = judgeAssessment(
+        a,
+        multiword,
+        G.settings.passThreshold,
+        G.settings.redCutoff,
+      );
       G.screen = verdict.passed ? "pass" : "fail";
       G.statusById[cur.id] = verdict.passed ? "defeated" : "failed";
       G.feedback = {
@@ -628,7 +635,11 @@ export default function PronunciationTetris() {
     }
 
     G.bestHp[t.id] = Math.max(G.bestHp[t.id] ?? 0, a.accuracy);
-    const verdict = judge(units, { accuracy: a.accuracy, threshold });
+    const verdict = judge(units, {
+      accuracy: a.accuracy,
+      threshold,
+      redCutoff: G.settings.redCutoff,
+    });
 
     // Capture PREVIOUS status: distinguishes fresh defeat (grants XP)
     // from re-passing something already defeated (no farming).
@@ -655,7 +666,7 @@ export default function PronunciationTetris() {
       G.streak = 0;
       G.combo = 0;
       flash("red");
-      const partial = verdict.worstScore >= RED_CUTOFF;
+      const partial = verdict.worstScore > G.settings.redCutoff;
       setBadge("", partial ? "c-amber" : "c-red");
       setFeedback(failHint(a, multiword, threshold));
       // DeepSeek tip: only on single words (drill), at phoneme level.
@@ -1020,13 +1031,16 @@ export default function PronunciationTetris() {
       ? alignWords(t.reference, G.lastAssessment.words)
       : null;
 
-  /** Traffic light: >= threshold plain ink (fine), amber down to the red
-   * cutoff, red below it. Single source for BOTH the inline sentence and the
-   * practice table so the colors never drift apart. */
+  /** Traffic light bands from scoring.ts — single source for BOTH the inline
+   * sentence and the practice table so the colors never drift apart. */
   const tokClass = (score: number): string =>
-    score >= threshold ? "" : score >= RED_CUTOFF ? " warn" : " bad";
+    ({ ok: "", blue: " watch", amber: " warn", red: " bad" })[
+      scoreBand(score, threshold, G.settings.redCutoff)
+    ];
   const scoreTone = (score: number): string =>
-    score >= threshold ? "c-accent" : score >= RED_CUTOFF ? "c-amber" : "c-red";
+    ({ ok: "c-accent", blue: "c-accent", amber: "c-amber", red: "c-red" })[
+      scoreBand(score, threshold, G.settings.redCutoff)
+    ];
 
   const metaLabel = (): string => {
     if (!t) return "";
@@ -1059,10 +1073,10 @@ export default function PronunciationTetris() {
     let base: number;
     let floor: number;
     if (t.kind === "boss") {
-      base = t.label.length > 220 ? 18 : 21;
+      base = t.label.length > 220 ? 20 : 23;
       floor = 12;
     } else {
-      base = t.label.length > 90 ? 22 : 26;
+      base = t.label.length > 90 ? 24 : 28;
       floor = 12;
     }
     return Math.max(floor, base + G.fontDelta);
@@ -1096,7 +1110,7 @@ export default function PronunciationTetris() {
     if (G.screen === "fail") {
       const a = G.lastAssessment;
       if (!a) return { title: "Probá de nuevo", cls: "c-red", sub: "" };
-      const reds = redCount(a, t.kind !== "word");
+      const reds = redCount(a, t.kind !== "word", G.settings.redCutoff);
       const unit = t.kind === "word" ? "sonido" : "palabra";
       return {
         title: "Sigue practicando",
@@ -1453,7 +1467,7 @@ export default function PronunciationTetris() {
                     <>
                       <p
                         className="pt-word-big"
-                        style={{ fontSize: Math.max(20, 44 + G.fontDelta * 2) }}
+                        style={{ fontSize: Math.max(22, 46 + G.fontDelta * 2) }}
                       >
                         {t.label}
                       </p>
@@ -1476,28 +1490,14 @@ export default function PronunciationTetris() {
                     <p className="pt-sentence" style={{ fontSize: sentenceFontSize() }}>
                       {aligned
                         ? aligned.tokens.map((tok, i) => {
-                          // PASS: watch-words (still on the practice list) go
-                          // BLUE — "liked it, keep practicing". Green would
-                          // read as "done" and red would sour the win.
-                          const watch =
-                            tok.score !== null &&
-                            (tok.score.accuracy < threshold ||
-                              curErrors()[tok.clean.toLowerCase()] !== undefined);
-                          const cls =
-                            G.screen === "pass"
-                              ? watch
-                                ? " watch"
-                                : ""
-                              : tok.omitted
-                                ? " omit"
-                                : tok.score
-                                  ? tokClass(tok.score.accuracy)
-                                  : "";
+                          const cls = tok.omitted
+                            ? " omit"
+                            : tok.score
+                              ? tokClass(tok.score.accuracy)
+                              : "";
                           const showSup =
                             tok.score !== null &&
-                            (G.screen === "pass"
-                              ? watch
-                              : tok.omitted || tok.score.accuracy < threshold);
+                            (tok.omitted || tok.score.accuracy < threshold);
                           return (
                             <span key={i}>
                               {tok.prefix}
@@ -1511,7 +1511,7 @@ export default function PronunciationTetris() {
                                   {tok.clean}
                                   {showSup && (
                                     <sup>
-                                      {tok.omitted && G.screen !== "pass"
+                                      {tok.omitted
                                         ? "—"
                                         : tok.score.accuracy.toFixed(0)}
                                     </sup>
@@ -1559,7 +1559,7 @@ export default function PronunciationTetris() {
               {G.screen !== "recording" && G.screen !== "pass" && (
                 <div
                   className={`pt-feedback ${G.feedback.tone}`}
-                  style={{ fontSize: Math.max(11, 14 + G.fontDelta) }}
+                  style={{ fontSize: Math.max(13, 16 + G.fontDelta) }}
                 >
                   {G.feedback.text}
                 </div>
@@ -1601,12 +1601,12 @@ export default function PronunciationTetris() {
                         .map(([w, c]) => `${w} ×${c}`)
                         .join(" · ")}
                       {" — "}
-                      <button className="pt-link" tabIndex={-1} onClick={onPracticeWorst}>
-                        practicar ahora
-                      </button>
-                      {" · "}
                       <button className="pt-link" tabIndex={-1} onClick={onRetry}>
                         reintentar
+                      </button>
+                      {" · "}
+                      <button className="pt-link" tabIndex={-1} onClick={onPracticeWorst}>
+                        practicar ahora
                       </button>
                     </div>
                   )}
@@ -1738,7 +1738,11 @@ export default function PronunciationTetris() {
                       </div>
                     )}
                     {(() => {
-                      const reds = redCount(G.lastAssessment, isMultiword(t));
+                      const reds = redCount(
+                        G.lastAssessment,
+                        isMultiword(t),
+                        G.settings.redCutoff,
+                      );
                       return G.lastAssessment.accuracy >= threshold && reds > 0 ? (
                         <div className="sc-flag">
                           bloqueado por {reds}{" "}
@@ -1951,13 +1955,15 @@ function SettingsModal(props: {
   const field = (
     label: string,
     key: keyof Settings,
-    opts: { type?: string; placeholder?: string } = {},
+    opts: { type?: string; placeholder?: string; min?: number; max?: number } = {},
   ) => (
     <div className="pt-field">
       <label>{label}</label>
       <input
         type={opts.type ?? "text"}
         placeholder={opts.placeholder}
+        min={opts.min}
+        max={opts.max}
         value={String(draft.current[key])}
         onChange={(e) => {
           const value = e.target.value;
@@ -2002,19 +2008,30 @@ function SettingsModal(props: {
         </fieldset>
         <fieldset>
           <legend>Juego</legend>
-          {field("Umbral de aprobado", "passThreshold", { type: "number" })}
+          {field("Umbral de aprobado", "passThreshold", {
+            type: "number",
+            min: 80,
+            max: 100,
+            placeholder: "mínimo 80",
+          })}
+          {field("Corte de rojo (derrota por palabra)", "redCutoff", {
+            type: "number",
+            min: 0,
+            max: 79,
+            placeholder: "≤ este número, la palabra veta el triunfo",
+          })}
           {field("Silencio de corte (ms)", "endSilenceMs", {
             type: "number",
             placeholder: "1500 — menos = evalúa más rápido",
           })}
           {field("Nivel CEFR", "cefrLevel", { placeholder: "A1…C2" })}
           <div className="pt-field">
-            <label>Tamaño del texto</label>
+            <label>Tamaño de la oración</label>
             <div className="pt-font-controls">
               <button
                 className="pt-btn sm"
                 onClick={() => props.onFont(-2)}
-                title="Achicar el texto a leer"
+                title="Achicar la oración a leer"
               >
                 A−
               </button>
@@ -2024,7 +2041,7 @@ function SettingsModal(props: {
               <button
                 className="pt-btn sm"
                 onClick={() => props.onFont(+2)}
-                title="Agrandar el texto a leer"
+                title="Agrandar la oración a leer"
               >
                 A+
               </button>
@@ -2063,7 +2080,10 @@ function SettingsModal(props: {
               for (const [k, v] of Object.entries(clean)) {
                 if (typeof v === "string") clean[k] = v.trim();
               }
-              props.onSave(clean as unknown as Settings);
+              const s = clean as unknown as Settings;
+              s.passThreshold = clampThreshold(s.passThreshold);
+              s.redCutoff = clampRedCutoff(s.redCutoff);
+              props.onSave(s);
             }}
           >
             Guardar

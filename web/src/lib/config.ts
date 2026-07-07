@@ -11,6 +11,8 @@ export interface Settings {
   /** rate: '+0%', '-10%', 'slow', 'fast'... */
   ttsRate: string;
   passThreshold: number;
+  /** A unit scoring at or below this shows red and vetoes the win. */
+  redCutoff: number;
   /** 2nd way to defeat: average within <= margin of threshold + correct text. */
   nearMissMargin: number;
   /** ms of silence that end a sentence recording (words use 40%, boss +500). */
@@ -31,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsPitch: "0%",
   ttsRate: "0%",
   passThreshold: 85,
+  redCutoff: 50,
   nearMissMargin: 5,
   endSilenceMs: 1500,
   cefrLevel: "B2",
@@ -40,6 +43,16 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 const STORAGE_KEY = "pronunciation-tetris.settings";
+
+/** The threshold can't drop below this: the game stops being a game under 80. */
+export const MIN_THRESHOLD = 80;
+
+export const clampThreshold = (n: number): number =>
+  Math.min(100, Math.max(MIN_THRESHOLD, Math.round(n)));
+
+/** Keeps the red band strictly under the amber one (81+ is blue/ok). */
+export const clampRedCutoff = (n: number): number =>
+  Math.min(79, Math.max(0, Math.round(n)));
 
 export const settingsReady = (s: Settings): boolean =>
   s.speechKey.trim().length > 0 && s.speechRegion.trim().length > 0;
@@ -60,7 +73,10 @@ export function loadSettings(): Settings {
         merged[key] = data[key];
       }
     }
-    return merged as unknown as Settings;
+    const settings = merged as unknown as Settings;
+    settings.passThreshold = clampThreshold(settings.passThreshold);
+    settings.redCutoff = clampRedCutoff(settings.redCutoff);
+    return settings;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

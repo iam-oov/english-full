@@ -13,9 +13,12 @@ directo desde el navegador con el SDK de JS); un ASR común NO sirve porque
 del jugador.
 
 **Regla de aprobado** (semáforo): WIN = promedio ≥ umbral **y** ninguna
-palabra en rojo (<50, `RED_CUTOFF`). El ámbar (50–umbral) no bloquea si el
-promedio alcanza. Las inserciones (palabras dichas de más, p. ej. un eco) no
-vetan el veredicto. Vive en `web/src/lib/scoring.ts`, puro y testeado.
+palabra en rojo (≤ corte de rojo, default 50 y configurable en ajustes).
+Bandas: rojo ≤ corte · naranja hasta 80 · azul 81–umbral ("me gustó, sigue
+practicando") · ≥ umbral tinta normal. Naranja/azul no bloquean si el
+promedio alcanza; las inserciones (palabras dichas de más, p. ej. un eco)
+tampoco. El umbral mínimo permitido es 80 (`MIN_THRESHOLD`). Vive en
+`web/src/lib/scoring.ts` (`scoreBand`, `judge`), puro y testeado.
 
 ## Comandos (desde `web/`)
 

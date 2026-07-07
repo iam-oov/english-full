@@ -57,6 +57,7 @@ import {
 } from "../lib/scoring";
 import { alignWords, type Alignment } from "../lib/align";
 import {
+  AMBER_CUTOFF,
   CHALLENGE_MAX_WORDS,
   LEVEL_PRESETS,
   MIN_SILENCE_MS,
@@ -253,9 +254,9 @@ export default function EnglishBoss() {
       );
       return hit ? hit.accuracy : Number.POSITIVE_INFINITY;
     };
-    return Object.entries(curErrors()).sort(
-      (a, b) => scoreOf(a[0]) - scoreOf(b[0]) || b[1] - a[1],
-    );
+    return Object.entries(curErrors())
+      .filter(([w]) => scoreOf(w) <= AMBER_CUTOFF || scoreOf(w) === Number.POSITIVE_INFINITY)
+      .sort((a, b) => scoreOf(a[0]) - scoreOf(b[0]) || b[1] - a[1]);
   };
 
   const bossIndex = (): number | null => {
@@ -670,20 +671,20 @@ export default function EnglishBoss() {
     const units = assessmentUnits(a, multiword);
     if (multiword) {
       if (t.kind === "challenge") {
-        // Gauntlet mastery: a word at/above the bar leaves EVERY list; a miss
-        // keeps living in the sentence that produced it (no double counting).
+        // Gauntlet mastery: a word out of the red/amber bands leaves EVERY
+        // list; a miss keeps living in the sentence that produced it.
         for (const [word, score] of units) {
-          if (score >= threshold) {
+          if (score > AMBER_CUTOFF) {
             for (const errs of Object.values(G.errors)) delete errs[word];
           }
         }
       } else {
-        // Per-word error counter: +1 for those below threshold; those that DO
-        // reach it leave the list (mastered). Feeds the word gauntlets.
+        // Per-word error counter: red/amber count a miss; blue or better
+        // leaves the list (good enough). Feeds the word gauntlets.
         const errs = (G.errors[t.id] ??= {});
         for (const [word, score] of units) {
-          if (score < threshold) errs[word] = (errs[word] ?? 0) + 1;
-          else delete errs[word];
+          if (score > AMBER_CUTOFF) delete errs[word];
+          else errs[word] = (errs[word] ?? 0) + 1;
         }
       }
       // Combo: consecutive PERFECT words (>= max(threshold, 97)), spans attempts.
@@ -1749,17 +1750,10 @@ export default function EnglishBoss() {
                               lastW.accuracy >= threshold - 10;
                             const scoreCls =
                               lastW === undefined ? "" : scoreTone(lastW.accuracy);
-                            // Blue rows are the least urgent: on phones they
-                            // pack two per row instead of a full one each.
-                            const compact =
-                              lastW !== undefined &&
-                              ["blue", "ok"].includes(
-                                scoreBand(lastW.accuracy, threshold, G.settings.redCutoff),
-                              );
                             return (
                               <button
                                 key={w}
-                                className={`ptw-row${compact ? " compact" : ""}`}
+                                className="ptw-row"
                                 tabIndex={-1}
                                 title="Click para oírla"
                                 style={{ animationDelay: `${Math.min(i * 25, 150)}ms` }}

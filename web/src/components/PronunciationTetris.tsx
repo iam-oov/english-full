@@ -2198,7 +2198,7 @@ function SettingsModal(props: {
             placeholder: "mínimo 80",
             locked,
           })}
-          {field("Corte de rojo (derrota por palabra)", "redCutoff", {
+          {field("Derrota por palabra", "redCutoff", {
             type: "number",
             min: 0,
             max: 79,

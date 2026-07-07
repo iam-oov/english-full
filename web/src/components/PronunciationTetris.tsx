@@ -1583,7 +1583,7 @@ export default function PronunciationTetris() {
                       : "Grabá primero para poder escucharte"
                   }
                 >
-                  <Headphones size={13} /> Escuchar tu respuesta
+                  <Ear size={13} /> Escuchar tu respuesta
                 </button>
                 {aligned && (
                   <span className="pt-caption">

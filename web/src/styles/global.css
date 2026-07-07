@@ -692,6 +692,35 @@ body {
   color: var(--ink);
   font-weight: 700;
 }
+.pt-coach-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.pt-coach-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pt-coach-word {
+  font-weight: 800;
+  color: var(--ink);
+}
+.pt-coach-ipa {
+  font-family: var(--ipa-font);
+  font-weight: 600;
+  color: var(--muted);
+}
 
 /* --------------------------------------------------------------- rail
  * Full-bleed panel: occupies 100% of main height (navbar to bottom bar),
@@ -1062,12 +1091,6 @@ body {
   align-items: center;
   justify-content: center;
 }
-.pt-coach {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.pt-coach svg { flex: none; align-self: center; }
 .pt-mic-test:hover:not(:disabled) { background: var(--bg); }
 .pt-mic-test:disabled { color: var(--dim); cursor: default; }
 

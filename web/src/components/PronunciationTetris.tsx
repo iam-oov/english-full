@@ -146,7 +146,12 @@ interface G {
   // --- visual feedback ---
   badge: UiText & { live?: boolean };
   feedback: UiText;
-  coach: { mode: "hidden" | "loading" | "shown"; text: string };
+  coach: {
+    mode: "hidden" | "loading" | "shown";
+    text: string;
+    word?: string;
+    ipa?: string;
+  };
   flash: "" | "green" | "red";
   flashGen: number;
   xp: { amount: number; gen: number } | null;
@@ -610,12 +615,19 @@ export default function PronunciationTetris() {
     const phonemes: Array<[string, number]> = (source?.phonemes ?? []).map(
       (p) => [p.phoneme, p.accuracy],
     );
+    const ipa =
+      phonemes.length > 0
+        ? `/${phonemes.map(([ph]) => ph).join("")}/`
+        : undefined;
+    G.coach = { mode: "loading", text: "", word, ipa };
     const myGen = G.gen; // if context changes before arrival, it's discarded
     coach()
       .tip(word, phonemes, a.recognizedText, attempts, G.totalAttempts)
       .then((tip) => {
         if (myGen !== G.gen || G.screen !== "fail") return;
-        G.coach = tip ? { mode: "shown", text: tip } : { mode: "hidden", text: "" };
+        G.coach = tip
+          ? { mode: "shown", text: tip, word, ipa }
+          : { mode: "hidden", text: "" };
         rerender();
       });
   };
@@ -698,7 +710,6 @@ export default function PronunciationTetris() {
       const redBlocked =
         multiword && redCount(a, true, G.settings.redCutoff) > 0;
       if (coach().available && (!multiword || redBlocked)) {
-        G.coach = { mode: "loading", text: "" };
         requestTip(a);
       } else {
         coachClear();
@@ -1785,8 +1796,22 @@ export default function PronunciationTetris() {
               {/* coach tip (DeepSeek) */}
               {G.coach.mode !== "hidden" && (
                 <div className={`pt-coach${G.coach.mode === "shown" ? " shown" : ""}`}>
-                  <Brain size={13} />{" "}
-                  {G.coach.mode === "loading" ? "pensando un consejo…" : G.coach.text}
+                  <div className="pt-coach-head">
+                    <span className="pt-coach-tag">
+                      <Brain size={13} /> Coach
+                    </span>
+                    {G.coach.word && (
+                      <span className="pt-coach-word">
+                        {G.coach.word}
+                        {G.coach.ipa && (
+                          <span className="pt-coach-ipa"> · {G.coach.ipa}</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  {G.coach.mode === "loading"
+                    ? "pensando un consejo…"
+                    : G.coach.text}
                 </div>
               )}
 

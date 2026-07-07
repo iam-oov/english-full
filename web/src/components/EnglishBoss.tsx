@@ -58,8 +58,6 @@ import {
 import { alignWords, type Alignment } from "../lib/align";
 import {
   CHALLENGE_MAX_WORDS,
-  CLIP_PAD_AFTER_MS,
-  CLIP_PAD_BEFORE_MS,
   LEVEL_PRESETS,
   MIN_SILENCE_MS,
   MIN_THRESHOLD,
@@ -1788,10 +1786,11 @@ export default function EnglishBoss() {
                                         stopPlayback();
                                         void playClip(
                                           G.lastAudioUrl!,
-                                          lastW.offsetMs! - CLIP_PAD_BEFORE_MS,
+                                          lastW.offsetMs! -
+                                            G.settings.clipPadBeforeMs,
                                           lastW.durationMs! +
-                                            CLIP_PAD_BEFORE_MS +
-                                            CLIP_PAD_AFTER_MS,
+                                            G.settings.clipPadBeforeMs +
+                                            G.settings.clipPadAfterMs,
                                         );
                                       }}
                                     >
@@ -2066,7 +2065,9 @@ function SettingsModal(props: {
   const draftValid =
     !outOfRange("passThreshold", { min: MIN_THRESHOLD, max: 100 }) &&
     !outOfRange("redCutoff", { min: 0, max: 79 }) &&
-    !outOfRange("endSilenceMs", { min: MIN_SILENCE_MS, max: 10000 });
+    !outOfRange("endSilenceMs", { min: MIN_SILENCE_MS, max: 10000 }) &&
+    !outOfRange("clipPadBeforeMs", { min: 0, max: 1000 }) &&
+    !outOfRange("clipPadAfterMs", { min: 0, max: 1000 });
 
   const locked = draft.current.level !== "custom";
 
@@ -2202,6 +2203,18 @@ function SettingsModal(props: {
             max: 10000,
             placeholder: "menos = evalúa más rápido",
             locked,
+          })}
+          {field("Extracto: antes (ms)", "clipPadBeforeMs", {
+            type: "number",
+            min: 0,
+            max: 1000,
+            placeholder: "audio extra ANTES de la palabra",
+          })}
+          {field("Extracto: después (ms)", "clipPadAfterMs", {
+            type: "number",
+            min: 0,
+            max: 1000,
+            placeholder: "audio extra DESPUÉS de la palabra",
           })}
           <div className="pt-field">
             <label>Tamaño de la plataforma</label>

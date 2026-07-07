@@ -3,6 +3,8 @@
 
 import {
   AMBER_CUTOFF,
+  CLIP_PAD_AFTER_MS,
+  CLIP_PAD_BEFORE_MS,
   MIN_SILENCE_MS,
   MIN_THRESHOLD,
   RED_CUTOFF,
@@ -28,6 +30,9 @@ export interface Settings {
   uiFontDelta: number;
   /** px added to the reading text only (the sentence/gauntlet/boss). */
   sentenceFontDelta: number;
+  /** ms of your recording played around a word's excerpt (lead / tail). */
+  clipPadBeforeMs: number;
+  clipPadAfterMs: number;
   /** DeepSeek (LLM) is OPTIONAL: without a key, static hints and that's it. */
   deepseekKey: string;
   deepseekModel: string;
@@ -43,6 +48,8 @@ export const DEFAULT_SETTINGS: Settings = {
   endSilenceMs: 1500,
   uiFontDelta: 0,
   sentenceFontDelta: 0,
+  clipPadBeforeMs: CLIP_PAD_BEFORE_MS,
+  clipPadAfterMs: CLIP_PAD_AFTER_MS,
   deepseekKey: "",
   deepseekModel: "deepseek-chat",
   deepseekBaseUrl: "https://api.deepseek.com",
@@ -62,6 +69,9 @@ export const clampSilence = (n: number): number =>
 
 export const clampUiFontDelta = (n: number): number =>
   Math.min(UI_FONT_DELTA_MAX, Math.max(UI_FONT_DELTA_MIN, Math.round(n)));
+
+export const clampClipPad = (n: number): number =>
+  Math.min(1000, Math.max(0, Math.round(n)));
 
 export const clampSentenceFontDelta = (n: number): number =>
   Math.min(
@@ -94,6 +104,8 @@ export function loadSettings(): Settings {
     settings.endSilenceMs = clampSilence(settings.endSilenceMs);
     settings.uiFontDelta = clampUiFontDelta(settings.uiFontDelta);
     settings.sentenceFontDelta = clampSentenceFontDelta(settings.sentenceFontDelta);
+    settings.clipPadBeforeMs = clampClipPad(settings.clipPadBeforeMs);
+    settings.clipPadAfterMs = clampClipPad(settings.clipPadAfterMs);
     if (!["mid", "senior", "custom"].includes(settings.level)) {
       settings.level = "custom";
     }

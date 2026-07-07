@@ -71,17 +71,31 @@ export async function recordTest(
   });
 }
 
+let currentPlayback: { audio: HTMLAudioElement; done: () => void } | null = null;
+
+/** Cuts the current playRecording() short; its promise resolves right away. */
+export function stopPlayback(): void {
+  const playing = currentPlayback;
+  if (!playing) return;
+  currentPlayback = null;
+  playing.audio.pause();
+  playing.done();
+}
+
 /** Plays a recording (objectURL). Returns an error, or null on success.
- * The promise resolves when playback FINISHES. */
+ * The promise resolves when playback FINISHES (or stopPlayback() cuts it). */
 export function playRecording(url: string): Promise<string | null> {
+  stopPlayback();
   return new Promise((resolve) => {
     let settled = false;
+    const audio = new Audio(url);
     const done = (err: string | null) => {
       if (settled) return;
       settled = true;
+      if (currentPlayback?.audio === audio) currentPlayback = null;
       resolve(err);
     };
-    const audio = new Audio(url);
+    currentPlayback = { audio, done: () => done(null) };
     audio.onended = () => done(null);
     audio.onerror = () => done("No pude reproducir la grabación.");
     audio.onloadedmetadata = () => {

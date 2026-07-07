@@ -32,6 +32,7 @@ import {
   Mic,
   RotateCcw,
   Settings as SettingsIcon,
+  Square,
   Upload,
   Volume2,
   X,
@@ -89,6 +90,7 @@ import {
   playClip,
   playRecording,
   recordTest,
+  stopPlayback,
   type MicOption,
 } from "../lib/audio";
 import { cleanOcrText, extractTextFromImage } from "../lib/ocr";
@@ -123,6 +125,7 @@ interface G {
   targets: Target[];
   index: number;
   lastAudioUrl: string | null;
+  playingMine: boolean;
   /** last OK result, for the inline feedback (null = no breakdown) */
   lastAssessment: Assessment | null;
   micOptions: MicOption[];
@@ -182,6 +185,7 @@ const initialG = (): G => ({
   targets: [],
   index: 0,
   lastAudioUrl: null,
+  playingMine: false,
   lastAssessment: null,
   micOptions: [{ label: "System Default" }],
   micSelected: "",
@@ -435,6 +439,8 @@ export default function PronunciationTetris() {
   const reset = () => {
     // Panic button: discards the game. gen++ invalidates any in-flight
     // async work (a late assessment/TTS/tip is discarded).
+    stopPlayback();
+    G.playingMine = false;
     G.busy = false;
     G.busyLabel = null;
     G.lastAudioUrl = null;
@@ -463,6 +469,8 @@ export default function PronunciationTetris() {
     G.gen += 1; // invalidates stale tips/results
     assessAbort.current?.abort();
     G.wordAttempts = 0;
+    stopPlayback();
+    G.playingMine = false;
     G.lastAudioUrl = null; // previous target's recording no longer applies
     G.chipsOpen = false; // expanded chips belong to previous target
     setBadge("", "c-dim");
@@ -563,6 +571,8 @@ export default function PronunciationTetris() {
   const startRecording = () => {
     const t = current();
     if (!t) return;
+    stopPlayback();
+    G.playingMine = false;
     G.busy = true;
     G.screen = "recording";
     G.gen += 1; // new recording: invalidates previous attempt's tip
@@ -722,6 +732,8 @@ export default function PronunciationTetris() {
   };
 
   const startTts = (text: string) => {
+    stopPlayback();
+    G.playingMine = false;
     G.busy = true;
     G.busyLabel = "Reproduciendo…";
     const myGen = G.gen;
@@ -749,7 +761,13 @@ export default function PronunciationTetris() {
   };
 
   const onPlayMine = () => {
-    if (G.busy || G.screen === "input" || G.screen === "win" || !hasGame()) return;
+    if (G.screen === "input" || G.screen === "win" || !hasGame()) return;
+    if (G.playingMine) {
+      // Toggle: cut it short; the pending promise resolves and cleans up.
+      stopPlayback();
+      return;
+    }
+    if (G.busy) return;
     if (!G.lastAudioUrl) {
       const msg =
         G.screen === "fail" || G.screen === "pass"
@@ -759,14 +777,12 @@ export default function PronunciationTetris() {
       rerender();
       return;
     }
-    G.busy = true;
-    G.busyLabel = "Reproduciendo tu voz…";
+    G.playingMine = true;
     const myGen = G.gen;
     rerender();
     playRecording(G.lastAudioUrl).then((err) => {
       if (G.gen !== myGen) return;
-      G.busy = false;
-      G.busyLabel = null;
+      G.playingMine = false;
       if (err) setFeedback(String(err), "c-red");
       rerender();
     });
@@ -1576,14 +1592,24 @@ export default function PronunciationTetris() {
                   className="pt-btn sm"
                   tabIndex={-1}
                   onClick={onPlayMine}
-                  disabled={G.busy || !G.lastAudioUrl}
+                  disabled={(G.busy || !G.lastAudioUrl) && !G.playingMine}
                   title={
-                    G.lastAudioUrl
-                      ? `Escuchar tu última grabación (${keyLabel("mine")})`
-                      : "Grabá primero para poder escucharte"
+                    G.playingMine
+                      ? "Detener la reproducción"
+                      : G.lastAudioUrl
+                        ? `Escuchar tu última grabación (${keyLabel("mine")})`
+                        : "Grabá primero para poder escucharte"
                   }
                 >
-                  <Ear size={13} /> Escuchar tu respuesta
+                  {G.playingMine ? (
+                    <>
+                      <Square size={13} /> Detener
+                    </>
+                  ) : (
+                    <>
+                      <Ear size={13} /> Escuchar tu respuesta
+                    </>
+                  )}
                 </button>
                 {aligned && (
                   <span className="pt-caption">
@@ -1751,6 +1777,7 @@ export default function PronunciationTetris() {
                                       title="Escuchar cómo la dijiste"
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        stopPlayback();
                                         void playClip(
                                           G.lastAudioUrl!,
                                           lastW.offsetMs! - 50,

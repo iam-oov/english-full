@@ -1,6 +1,8 @@
 /** Game configuration. Settings live in the player's localStorage (the
  * Azure key never leaves their browser, there is no backend). */
 
+import { AMBER_CUTOFF, MIN_SILENCE_MS, MIN_THRESHOLD, RED_CUTOFF } from "./constants";
+
 export type Level = "mid" | "senior" | "custom";
 
 export interface Settings {
@@ -24,7 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   speechKey: "",
   speechRegion: "",
   passThreshold: 85,
-  redCutoff: 50,
+  redCutoff: RED_CUTOFF,
   endSilenceMs: 1500,
   deepseekKey: "",
   deepseekModel: "deepseek-chat",
@@ -33,18 +35,12 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const STORAGE_KEY = "pronunciation-tetris.settings";
 
-/** The threshold can't drop below this: the game stops being a game under 80. */
-export const MIN_THRESHOLD = 80;
-
 export const clampThreshold = (n: number): number =>
   Math.min(100, Math.max(MIN_THRESHOLD, Math.round(n)));
 
 /** Keeps the red band strictly under the amber one (81+ is blue/ok). */
 export const clampRedCutoff = (n: number): number =>
-  Math.min(79, Math.max(0, Math.round(n)));
-
-/** Under this the mic cuts mid-word; Azure won't take less anyway. */
-export const MIN_SILENCE_MS = 300;
+  Math.min(AMBER_CUTOFF - 1, Math.max(0, Math.round(n)));
 
 export const clampSilence = (n: number): number =>
   Math.min(10000, Math.max(MIN_SILENCE_MS, Math.round(n)));

@@ -56,10 +56,9 @@ import {
   scoreBand,
 } from "../lib/scoring";
 import { alignWords, type Alignment } from "../lib/align";
+import { LEVEL_PRESETS, MIN_SILENCE_MS, MIN_THRESHOLD } from "../lib/constants";
 import {
   DEFAULT_SETTINGS,
-  MIN_SILENCE_MS,
-  MIN_THRESHOLD,
   clampRedCutoff,
   clampSilence,
   clampThreshold,
@@ -1875,11 +1874,6 @@ export default function PronunciationTetris() {
 }
 
 // ---------------------------------------------------------------- settings
-const LEVEL_PRESETS = [
-  { key: "mid", name: "Mid", passThreshold: 85, redCutoff: 60, endSilenceMs: 2000 },
-  { key: "senior", name: "Senior", passThreshold: 92, redCutoff: 75, endSilenceMs: 1200 },
-] as const;
-
 function SettingsModal(props: {
   settings: Settings;
   fontDelta: number;

@@ -10,6 +10,7 @@
  * blocks, even with a high average.
  */
 
+import { AMBER_CUTOFF, RED_CUTOFF } from "./constants";
 import type { Assessment } from "./types";
 
 export interface Verdict {
@@ -18,12 +19,6 @@ export interface Verdict {
   worstLabel: string | null;
   worstScore: number;
 }
-
-/** At or below this, a unit shows red and vetoes the win (default;
- * configurable per player in Settings.redCutoff). */
-export const RED_CUTOFF = 50;
-/** At or below this (and above red), a unit shows amber; above it, blue. */
-export const AMBER_CUTOFF = 80;
 
 export type Band = "red" | "amber" | "blue" | "ok";
 

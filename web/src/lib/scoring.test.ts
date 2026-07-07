@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { RED_CUTOFF } from "./constants";
 import {
-  RED_CUTOFF,
   assessmentUnits,
   judge,
   judgeAssessment,

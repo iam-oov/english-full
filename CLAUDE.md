@@ -41,6 +41,7 @@ Puertos y adaptadores; la UI solo conoce los puertos:
 
 | Módulo | Responsabilidad |
 | --- | --- |
+| `lib/constants.ts` | Perillas fijas del juego (cortes del semáforo, mínimos, voz TTS, presets Mid/Senior). Cero imports: cualquiera depende de él, nunca al revés. |
 | `lib/ports.ts` | `ScorerPort` + `AssessOptions` (el contrato). |
 | `lib/scorer.ts` | ÚNICO punto que habla con Azure (assessment once/continuo + TTS). |
 | `lib/coach.ts` | ÚNICO punto que habla con DeepSeek (opcional; null = degradar a pistas estáticas). |

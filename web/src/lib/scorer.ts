@@ -11,17 +11,11 @@ import * as sdk from "microsoft-cognitiveservices-speech-sdk";
 
 import type { Assessment, PhonemeScore, WordScore } from "./types";
 import { errorAssessment } from "./types";
+import { TARGET_LANGUAGE, TTS_PITCH, TTS_RATE, TTS_VOICE } from "./constants";
 import type { Settings } from "./config";
 import type { AssessOptions, OnStatus, ScorerPort } from "./ports";
 
 export type { AssessOptions, OnStatus, StatusCode } from "./ports";
-
-/** Fixed voice profile — too much knobs for a normal user, so it left
- * the settings UI. Tweak here if the voice ever needs to change. */
-const TARGET_LANGUAGE = "en-US";
-const TTS_VOICE = "en-US-AndrewNeural";
-const TTS_PITCH = "0%";
-const TTS_RATE = "+10%";
 
 /** A bare "Unable to contact server 1006" gives the player nothing to act
  * on; append the two usual culprits (region typo / browser shields). */

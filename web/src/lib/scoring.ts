@@ -1,9 +1,6 @@
 /** Pass rule of the game — pure domain.
  *
- * Deliberate divergence from the desktop `scoring.py`: playtesting showed the
- * original rules (every unit over the threshold, plus a near-miss rescue)
- * were illegible in the UI. The web rule matches the traffic-light colors the
- * player sees:
+ * The rule matches the traffic-light colors the player sees:
  *
  *   WIN  =  average >= threshold  AND  no unit in the red (< RED_CUTOFF).
  *

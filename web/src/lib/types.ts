@@ -1,6 +1,6 @@
 /** DTOs for the result of assessing a pronunciation — pure domain, no Azure.
  *
- * Mirror of `assessment.py`: the rest of the game speaks in these types and
+ * The rest of the game speaks in these types and
  * doesn't know there is a cloud SDK underneath. If the engine is swapped
  * tomorrow, only `scorer.ts` changes.
  */

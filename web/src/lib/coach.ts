@@ -1,5 +1,5 @@
 /** DeepSeek (LLM) adapter: personalized pronunciation tips.
- * Mirror of `coach.py`: optional and regression-free. `tip()` returns null if
+ * Optional and regression-free: `tip()` returns null if
  * anything fails (no key, network down, CORS) -> the caller falls back to the
  * static hint.
  *

@@ -1,9 +1,5 @@
-/** Game configuration — mirror of `config.py`, adapted to the browser.
- *
- * On desktop this was a `.env`; here the settings live in the player's
- * localStorage (the Azure key never leaves their browser, there is no
- * backend).
- */
+/** Game configuration. Settings live in the player's localStorage (the
+ * Azure key never leaves their browser, there is no backend). */
 
 export interface Settings {
   speechKey: string;

@@ -1,5 +1,4 @@
-/** Persisted progression: lifetime XP, level and accuracy. Mirror of
- * `progress.py`, with localStorage instead of the JSON in the XDG dir.
+/** Persisted progression: lifetime XP, level and accuracy (localStorage).
  *
  * - `LifetimeStats`: what is PERSISTED (total XP, accumulated accuracy, best
  *   streak). Level and accuracy are DERIVED, never stored (no migrations).

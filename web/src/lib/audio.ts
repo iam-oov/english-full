@@ -1,5 +1,4 @@
-/** LOCAL audio (no Azure): testing the microphone and playing recordings.
- * Mirror of `audio.py` (sounddevice + aplay) using the browser APIs. */
+/** LOCAL audio (no Azure): testing the microphone and playing recordings. */
 
 export interface MicOption {
   label: string;

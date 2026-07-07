@@ -1,15 +1,10 @@
 /** Azure Speech adapter (JavaScript SDK): pronunciation assessment + TTS.
  *
- * This is the ONLY part that talks to Azure — mirror of `scorer.py`. The rest
- * of the game asks "assess this" and gets a clean `Assessment` back; if the
- * engine is swapped tomorrow, only this file changes.
- *
- * Differences from desktop, dictated by the browser:
- * - No threads: the JS SDK is already async, so `assess`/`speak` return
- *   promises and the UI simply awaits them.
- * - The own-voice capture for "hear your voice" uses getUserMedia +
- *   MediaRecorder alongside the SDK's mic (same role as sounddevice + push
- *   stream in Python): if it fails, scoring continues, only playback is lost.
+ * This is the ONLY part that talks to Azure. The rest of the game asks
+ * "assess this" and gets a clean `Assessment` back; if the engine is swapped
+ * tomorrow, only this file changes. The own-voice capture for "hear your
+ * voice" uses getUserMedia + MediaRecorder alongside the SDK's mic: if it
+ * fails, scoring continues, only playback is lost.
  */
 
 import * as sdk from "microsoft-cognitiveservices-speech-sdk";
@@ -365,7 +360,7 @@ export class Scorer implements ScorerPort {
   /** Plays 'text' with a neural voice ("hear how it's said").
    * Returns an error message, or null on success. The promise resolves when
    * playback FINISHES (SpeakerAudioDestination.onAudioEnd), so the UI keeps
-   * the 'busy' state while it plays, as on desktop. */
+   * the 'busy' state while it plays. */
   speak(text: string): Promise<string | null> {
     return new Promise((resolve) => {
       let synthesizer: sdk.SpeechSynthesizer | null = null;

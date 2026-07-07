@@ -1,4 +1,4 @@
-/** Pronunciation Tetris - web port of the desktop game (app.py).
+/** Pronunciation Tetris.
  *
  * Start screen "1d": paragraph or image as input (cards side by side) and
  * microphone + test + Start in a single bar.
@@ -8,13 +8,12 @@
  * paragraph's route lives in a rail on the right (click navigates); actions
  * are visible buttons with their keyboard shortcut as a hint.
  *
- * Architecture: this component is the equivalent of the tkinter App class.
- * It only knows the ports (scorer/coach/audio/ocr/progress); no Azure here.
+ * Architecture: this component owns the whole UI and state machine. It only
+ * knows the ports (scorer/coach/audio/ocr/progress); no Azure here.
  *
- * Concurrency model: where the desktop used threads + queue + _poll, here
- * async/await is enough (the JS SDK doesn't block). We keep the `gen`
- * counter that invalidates stale async work (a coach tip or an assessment
- * arriving after a reset is discarded).
+ * Concurrency model: async/await plus the `gen` counter that invalidates
+ * stale async work (a coach tip or an assessment arriving after a reset is
+ * discarded).
  *
  * Demo mode: with ?demo in the URL the scorer is replaced by a canned stub
  * (src/lib/demo.ts) - full visual QA without a mic or Azure key.
@@ -104,7 +103,7 @@ const DEMO =
   new URLSearchParams(window.location.search).has("demo");
 const demoScorer = createDemoScorer();
 
-/** Mutable game state (the "self" of the tkinter App). Lives in a ref and
+/** Mutable game state. Lives in a ref and
  * every mutation requests a re-render: keyboard actions always read the
  * live state, no stale closures. */
 interface G {

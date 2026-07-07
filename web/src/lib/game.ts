@@ -1,4 +1,4 @@
-/** Game model — pure domain. Mirror of the `app.py` model.
+/** Game model — pure domain.
  *
  * Target kinds:
  *   "sentence" -> sub-boss: one paragraph sentence (scored per word)
@@ -11,7 +11,7 @@ import { weakWords, type Assessment } from "./types";
 export type Kind = "sentence" | "boss" | "word";
 
 export interface Target {
-  /** stable id: replaces Python's `id(Target)` for indexing state */
+  /** stable id for indexing per-target state */
   id: number;
   /** what is displayed big */
   label: string;
@@ -43,7 +43,7 @@ export const isLongForm = isMultiword;
 export const isContinuous = (t: Target): boolean => t.kind === "boss";
 
 /** Splits a paragraph into sentences. A newline is ALWAYS a boundary
- * (one line = one sentence, as on desktop); within each line it segments
+ * (one line = one sentence); within each line it segments
  * with Intl.Segmenter + abbreviation re-joining, instead of the naive
  * split on '.'. So "Mr. Smith arrived." or "Meet at 5 p.m. today." stay
  * as ONE sentence. */

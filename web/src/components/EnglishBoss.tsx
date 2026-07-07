@@ -1743,10 +1743,17 @@ export default function EnglishBoss() {
                               lastW.accuracy >= threshold - 10;
                             const scoreCls =
                               lastW === undefined ? "" : scoreTone(lastW.accuracy);
+                            // Blue rows are the least urgent: on phones they
+                            // pack two per row instead of a full one each.
+                            const compact =
+                              lastW !== undefined &&
+                              ["blue", "ok"].includes(
+                                scoreBand(lastW.accuracy, threshold, G.settings.redCutoff),
+                              );
                             return (
                               <button
                                 key={w}
-                                className="ptw-row"
+                                className={`ptw-row${compact ? " compact" : ""}`}
                                 tabIndex={-1}
                                 title="Click para oírla"
                                 style={{ animationDelay: `${Math.min(i * 25, 150)}ms` }}

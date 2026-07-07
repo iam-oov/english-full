@@ -229,8 +229,21 @@ export default function PronunciationTetris() {
     return G.errors[t.id] ?? {};
   };
 
-  const worstWords = (): Array<[string, number]> =>
-    Object.entries(curErrors()).sort((a, b) => b[1] - a[1]);
+  /** Practice list, worst first: last-attempt score ascending (a word the
+   * player never said this attempt goes last), fail count breaks ties. */
+  const worstWords = (): Array<[string, number]> => {
+    const scoreOf = (w: string): number => {
+      const hit = G.lastAssessment?.words.find(
+        (x) =>
+          x.word.toLowerCase() === w.toLowerCase() &&
+          !x.errorType.includes("Insertion"),
+      );
+      return hit ? hit.accuracy : Number.POSITIVE_INFINITY;
+    };
+    return Object.entries(curErrors()).sort(
+      (a, b) => scoreOf(a[0]) - scoreOf(b[0]) || b[1] - a[1],
+    );
+  };
 
   const bossIndex = (): number | null => {
     const i = G.targets.findIndex((t) => t.kind === "boss");

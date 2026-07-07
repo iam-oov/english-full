@@ -590,18 +590,29 @@ export default function PronunciationTetris() {
   const requestTip = (a: Assessment) => {
     const t = current();
     if (!t) return;
-    const phonemes: Array<[string, number]> = (a.words[0]?.phonemes ?? []).map(
+    // Drill: the word itself. Sentence: the worst red word gets the tip.
+    let word = t.reference;
+    let source = a.words[0];
+    let attempts = G.wordAttempts;
+    if (isMultiword(t)) {
+      const red = a.words
+        .filter(
+          (w) =>
+            !w.errorType.includes("Insertion") &&
+            w.accuracy <= G.settings.redCutoff,
+        )
+        .sort((x, y) => x.accuracy - y.accuracy)[0];
+      if (!red) return;
+      word = red.word;
+      source = red;
+      attempts = curErrors()[red.word] ?? 1;
+    }
+    const phonemes: Array<[string, number]> = (source?.phonemes ?? []).map(
       (p) => [p.phoneme, p.accuracy],
     );
     const myGen = G.gen; // if context changes before arrival, it's discarded
     coach()
-      .tip(
-        t.reference,
-        phonemes,
-        a.recognizedText,
-        G.wordAttempts,
-        G.totalAttempts,
-      )
+      .tip(word, phonemes, a.recognizedText, attempts, G.totalAttempts)
       .then((tip) => {
         if (myGen !== G.gen || G.screen !== "fail") return;
         G.coach = tip ? { mode: "shown", text: tip } : { mode: "hidden", text: "" };
@@ -683,8 +694,10 @@ export default function PronunciationTetris() {
       const partial = verdict.worstScore > G.settings.redCutoff;
       setBadge("", partial ? "c-amber" : "c-red");
       setFeedback(failHint(a, multiword, threshold));
-      // DeepSeek tip: only on single words (drill), at phoneme level.
-      if (coach().available && !multiword) {
+      // DeepSeek tip: word drills always; sentences when a red word blocks.
+      const redBlocked =
+        multiword && redCount(a, true, G.settings.redCutoff) > 0;
+      if (coach().available && (!multiword || redBlocked)) {
         G.coach = { mode: "loading", text: "" };
         requestTip(a);
       } else {

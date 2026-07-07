@@ -227,7 +227,7 @@ export class Scorer implements ScorerPort {
       // is deaf — the phone's mic or the recognition service.
       if (assessment.error?.startsWith("No te escuché")) {
         assessment.error += assessment.audioUrl
-          ? " Tu micrófono SÍ grabó: usa «Escuchar tu respuesta» para verificar qué captó."
+          ? " Tu micrófono SÍ grabó: usa «Escucha tu respuesta» para verificar qué captó."
           : " Tu micrófono tampoco grabó nada localmente: revisa el permiso del mic o si otra app lo está usando.";
       }
       return assessment;

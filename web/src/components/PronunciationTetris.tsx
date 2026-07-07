@@ -1616,7 +1616,7 @@ export default function PronunciationTetris() {
                     </>
                   ) : (
                     <>
-                      <Ear size={13} /> Escuchar tu respuesta
+                      <Ear size={13} /> Escucha tu respuesta
                     </>
                   )}
                 </button>

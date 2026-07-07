@@ -1156,6 +1156,20 @@ body {
   border-color: var(--accent);
   background: var(--surface);
 }
+.pt-field input.invalid,
+.pt-field input.invalid:focus {
+  border-color: var(--red);
+  background: var(--red-soft);
+}
+.pt-field-error {
+  grid-column: 2;
+  color: var(--red);
+  font-size: 13px;
+}
+.pt-preset-row {
+  display: flex;
+  gap: 8px;
+}
 .pt-font-controls {
   display: flex;
   align-items: center;

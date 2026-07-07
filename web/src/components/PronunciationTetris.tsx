@@ -58,6 +58,7 @@ import {
 import { alignWords, type Alignment } from "../lib/align";
 import {
   DEFAULT_SETTINGS,
+  MIN_THRESHOLD,
   clampRedCutoff,
   clampThreshold,
   loadParagraph,
@@ -1873,6 +1874,11 @@ export default function PronunciationTetris() {
 }
 
 // ---------------------------------------------------------------- settings
+const LEVEL_PRESETS = [
+  { name: "Mid", passThreshold: 85, redCutoff: 60, endSilenceMs: 2000 },
+  { name: "Senior", passThreshold: 92, redCutoff: 75, endSilenceMs: 1200 },
+];
+
 function SettingsModal(props: {
   settings: Settings;
   fontDelta: number;
@@ -1952,28 +1958,57 @@ function SettingsModal(props: {
     force();
   };
 
+  const outOfRange = (
+    key: keyof Settings,
+    opts: { min?: number; max?: number },
+  ): boolean => {
+    const v = draft.current[key];
+    if (typeof v !== "number") return false;
+    return (
+      !Number.isFinite(v) ||
+      (opts.min !== undefined && v < opts.min) ||
+      (opts.max !== undefined && v > opts.max)
+    );
+  };
+
+  const draftValid =
+    !outOfRange("passThreshold", { min: MIN_THRESHOLD, max: 100 }) &&
+    !outOfRange("redCutoff", { min: 0, max: 79 });
+
   const field = (
     label: string,
     key: keyof Settings,
     opts: { type?: string; placeholder?: string; min?: number; max?: number } = {},
-  ) => (
-    <div className="pt-field">
-      <label>{label}</label>
-      <input
-        type={opts.type ?? "text"}
-        placeholder={opts.placeholder}
-        min={opts.min}
-        max={opts.max}
-        value={String(draft.current[key])}
-        onChange={(e) => {
-          const value = e.target.value;
-          const target = draft.current as unknown as Record<string, unknown>;
-          target[key] = typeof props.settings[key] === "number" ? Number(value) || 0 : value;
-          force();
-        }}
-      />
-    </div>
-  );
+  ) => {
+    const invalid = outOfRange(key, opts);
+    return (
+      <div className="pt-field">
+        <label>{label}</label>
+        <input
+          type={opts.type ?? "text"}
+          placeholder={opts.placeholder}
+          min={opts.min}
+          max={opts.max}
+          className={invalid ? "invalid" : undefined}
+          aria-invalid={invalid}
+          value={String(draft.current[key])}
+          onChange={(e) => {
+            const value = e.target.value;
+            const target = draft.current as unknown as Record<string, unknown>;
+            target[key] = typeof props.settings[key] === "number" ? Number(value) || 0 : value;
+            force();
+          }}
+        />
+        {invalid && (
+          <span className="pt-field-error">
+            {opts.min !== undefined && opts.max !== undefined
+              ? `Debe estar entre ${opts.min} y ${opts.max}`
+              : "Valor inválido"}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="pt-modal-backdrop" onClick={props.onClose}>
@@ -2008,6 +2043,32 @@ function SettingsModal(props: {
         </fieldset>
         <fieldset>
           <legend>Juego</legend>
+          <div className="pt-field">
+            <label>Nivel</label>
+            <div className="pt-preset-row">
+              {LEVEL_PRESETS.map((p) => {
+                const active =
+                  draft.current.passThreshold === p.passThreshold &&
+                  draft.current.redCutoff === p.redCutoff &&
+                  draft.current.endSilenceMs === p.endSilenceMs;
+                return (
+                  <button
+                    key={p.name}
+                    className={`pt-btn sm${active ? " success" : ""}`}
+                    title={`Umbral ${p.passThreshold} · corte de rojo ${p.redCutoff} · silencio ${p.endSilenceMs} ms`}
+                    onClick={() => {
+                      draft.current.passThreshold = p.passThreshold;
+                      draft.current.redCutoff = p.redCutoff;
+                      draft.current.endSilenceMs = p.endSilenceMs;
+                      force();
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {field("Umbral de aprobado", "passThreshold", {
             type: "number",
             min: 80,
@@ -2073,6 +2134,8 @@ function SettingsModal(props: {
           </button>
           <button
             className="pt-btn primary"
+            disabled={!draftValid}
+            title={draftValid ? undefined : "Corrige los campos en rojo"}
             onClick={() => {
               // Mobile keyboards sneak spaces into pasted keys/regions, and a
               // "eastus " region breaks the SDK's WebSocket URL (error 1006).
